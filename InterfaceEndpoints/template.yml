@@ -1,0 +1,147 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: A sample template
+Parameters:
+  KeyPairNameParam:
+    Type: String
+    Description: Key Pair specific to region
+  ImageAmiParam:
+    Type: String
+    Description: Image AMI of the EC2 instances
+  MyIpAddress:
+    Type: String
+    Description: Your personal IP address
+  MyVpcPrefix:
+    Type: String
+    Description: VPC prefix i.e. 10.0 for 10.0.0.0/16
+Resources:
+  MyVpc:
+    Type: AWS::EC2::VPC
+    Properties: 
+      CidrBlock: !Join [ ".", [ !Ref MyVpcPrefix , "0.0/16" ] ]
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+  MySubnet:
+    Type: AWS::EC2::Subnet
+    Properties:        
+      AvailabilityZone: !Select 
+        - 0
+        - Fn::GetAZs: !Ref AWS::Region
+      CidrBlock: !Join [ ".", [ !Ref MyVpcPrefix , "0.0/24" ] ]
+      MapPublicIpOnLaunch: true      
+      VpcId: !Ref MyVpc
+  MyInternetGatway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: InternetGateway
+  MyIGWGatewayAttachment:    
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:      
+      InternetGatewayId: !Ref MyInternetGatway
+      VpcId: !Ref MyVpc
+  MyRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties: 
+      VpcId: !Ref MyVpc
+  MySubnetRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties: 
+      RouteTableId: !Ref MyRouteTable
+      SubnetId: !Ref MySubnet
+  InternetRoute:      
+    Type: AWS::EC2::Route
+    Properties: 
+      DestinationCidrBlock: !Ref MyIpAddress 
+      # DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref MyInternetGatway
+      RouteTableId: !Ref MyRouteTable
+  MySecurityGroup:  
+    Type: AWS::EC2::SecurityGroup
+    Properties: 
+      GroupName: r3-lab-webServerGroup
+      GroupDescription: Security group for web server      
+      VpcId: !Ref MyVpc
+      SecurityGroupIngress:
+        - CidrIp: !Ref MyIpAddress          
+          FromPort: 22
+          ToPort: 22      
+          IpProtocol: tcp      
+        - CidrIp: !Join [ ".", [ !Ref MyVpcPrefix , "0.0/16" ] ]
+          IpProtocol: -1
+      SecurityGroupEgress:
+        - CidrIp: 0.0.0.0/0
+          FromPort: 80
+          ToPort: 80                
+          IpProtocol: tcp
+        - CidrIp: 0.0.0.0/0
+          FromPort: 443
+          ToPort: 443        
+          IpProtocol: tcp                    
+        - CidrIp: !Join [ ".", [ !Ref MyVpcPrefix , "0.0/16" ] ]
+          IpProtocol: -1
+  VpcEndpointSecurityGroup:  
+    Type: AWS::EC2::SecurityGroup
+    Properties: 
+      GroupName: VpcEndpointSecurityGroupName
+      GroupDescription: Security group for vpc interface endpoint
+      VpcId: !Ref MyVpc
+      SecurityGroupIngress:
+        - CidrIp: !Join [ ".", [ !Ref MyVpcPrefix , "0.0/16" ] ]
+          IpProtocol: -1
+  MyEc2Role:
+    Type: AWS::IAM::Role
+    Properties: 
+      RoleName: Ec2Role
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement: 
+          - Effect: Allow
+            Principal: 
+              Service: 
+                - ec2.amazonaws.com
+            Action: 
+              - sts:AssumeRole                            
+      Policies:
+        - PolicyName: DescribeLogGroupsPolicy
+          PolicyDocument: 
+            Version: "2012-10-17"
+            Statement: 
+              - Effect: Allow
+                Action: logs:DescribeLogGroups
+                Resource: "*"
+  MyInstanceProfile: 
+    Type: AWS::IAM::InstanceProfile
+    Properties:       
+      Roles: 
+        - !Ref MyEc2Role
+  MyEc2:
+    Type: AWS::EC2::Instance
+    Properties:      
+      ImageId: !Ref ImageAmiParam
+      InstanceType: t2.micro
+      KeyName: !Ref KeyPairNameParam
+      SecurityGroupIds:
+        - !Ref MySecurityGroup
+      SubnetId: !Ref MySubnet
+      IamInstanceProfile: !Ref MyInstanceProfile
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash        
+          apt update
+          apt install apache2 -y
+          ufw allow 'Apache'
+          sudo "y" | sudo ufw enable
+          ufw allow 'OpenSSH'        
+          apt install awscli -y
+  MyVpcEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties: 
+      VpcId: !Ref MyVpc
+      SubnetIds:
+        - !Ref MySubnet
+      SecurityGroupIds: 
+        - !Ref VpcEndpointSecurityGroup
+      ServiceName: com.amazonaws.us-east-1.logs      
+      VpcEndpointType: Interface
+      PrivateDnsEnabled: true
