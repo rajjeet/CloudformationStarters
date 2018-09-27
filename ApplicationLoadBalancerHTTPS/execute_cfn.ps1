@@ -70,8 +70,7 @@ $serversOutput = Invoke-CFNStack -stackName "alb-https-servers" `
 
 # Route53
 $domainOutput = Invoke-CFNStack -stackName "alb-https-domain" `
-  -templateBody (Get-Content (Join-Path $invocationDir "alb-https-domain.yml") -Raw) `
-  -timeout `
+  -templateBody (Get-Content (Join-Path $invocationDir "alb-https-domain.yml") -Raw) `  
   -parameterList @( `
     @{ ParameterKey="DomainName"; ParameterValue=$domainName } `
   ) 
