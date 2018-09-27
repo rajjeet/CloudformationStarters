@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: "2010-09-09"
-Description: Domain
+Description: Certificate
 Parameters:
   DomainName:
     Type: String

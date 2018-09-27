@@ -68,32 +68,32 @@ $serversOutput = Invoke-CFNStack -stackName "alb-https-servers" `
     @{ ParameterKey="InstanceProfile"; ParameterValue=($securityOutput | Where-Object {$_.OutputKey -eq "InstanceProfile"}).OutputValue } `
   ) 
 
+# Route53
 $domainOutput = Invoke-CFNStack -stackName "alb-https-domain" `
   -templateBody (Get-Content (Join-Path $invocationDir "alb-https-domain.yml") -Raw) `
   -timeout `
   -parameterList @( `
     @{ ParameterKey="DomainName"; ParameterValue=$domainName } `
   ) 
-
 $hostedZoneId = ($domainOutput | Where-Object {$_.OutputKey -eq "HostedZoneId"}).OutputValue
 $nameServersStr = ($domainOutput | Where-Object {$_.OutputKey -eq "NameServers"}).OutputValue
 
+# Update Name Servers of Registered Domain 
 $nameServers = @()
 $nameServersStr.Split(",").ForEach{
   $ns = New-Object Amazon.Route53Domains.Model.Nameserver
   $ns.Name = $_
   $nameServers += $ns
 }
-
 Update-R53DDomainNameserver -DomainName $domainName -Nameserver $nameServers
 
+# ACM Certificate
 $certificateOutput = Invoke-CFNStack -stackName "alb-https-certificate" `
   -templateBody (Get-Content (Join-Path $invocationDir "alb-https-certificate.yml") -Raw) `
   -timeout 7200 `
   -parameterList @( `
     @{ ParameterKey="DomainName"; ParameterValue=$domainName } `
   ) 
-
 
 # HTTPS Application Load Balancer (ALB)
 $albOutput = Invoke-CFNStack -stackName "alb-https-loadbalancer" `
@@ -111,7 +111,7 @@ $albOutput = Invoke-CFNStack -stackName "alb-https-loadbalancer" `
   ) 
 $albDnsName = ($albOutput | Where-Object {$_.OutputKey -eq "AlbDnsName"}).OutputValue
 
-# A Record for ALB
+# Route53 Add A Record for Load Balancer
 $AResourceRecords = (Get-R53ResourceRecordSet -HostedZoneId $hostedZoneId).ResourceRecordSets.Where{$_.Type -eq 'A'}
 if ($AResourceRecords.Where{$_.AliasTarget.DNSName -match $albDnsName }.Count -eq 0) {
 
@@ -128,5 +128,5 @@ if ($AResourceRecords.Where{$_.AliasTarget.DNSName -match $albDnsName }.Count -e
     Edit-R53ResourceRecordSet -HostedZoneId $hostedZoneId -ChangeBatch_Change $change
 }
 
-# Finish
+# Finished
 Write-Host "SUCCESS" -BackgroundColor Green -ForegroundColor Black
