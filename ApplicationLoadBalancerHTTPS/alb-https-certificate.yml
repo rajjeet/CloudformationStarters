@@ -1,0 +1,16 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Domain
+Parameters:
+  DomainName:
+    Type: String
+Resources:
+  Certificate:
+    Type: AWS::CertificateManager::Certificate
+    Properties: 
+      DomainName: !Ref DomainName
+      SubjectAlternativeNames:
+        - !Join [".", [ "*", !Ref DomainName ] ]
+      ValidationMethod: DNS
+Outputs:
+  CertificateArn:
+    Value: !Ref Certificate

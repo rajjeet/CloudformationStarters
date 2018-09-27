@@ -1,0 +1,86 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Security
+Parameters:
+  Vpc:
+    Type: String
+    Description: Vpc of alb-https stack
+  IpAddress:
+    Type: String
+    Description: Your personal IP address
+  VpcPrefix:
+    Type: String
+    Description: VPC prefix i.e. 10.0 for 10.0.0.0/16
+Resources:  
+  Ec2SecurityGroup:  
+    Type: AWS::EC2::SecurityGroup
+    Properties: 
+      GroupName: WebSecurityGroup
+      GroupDescription: Security group for web server      
+      VpcId: !Ref Vpc
+      SecurityGroupIngress:
+        - CidrIp: !Sub "${IpAddress}"
+          FromPort: 22
+          ToPort: 22      
+          IpProtocol: tcp      
+        - CidrIp: !Join [ ".", [ !Ref VpcPrefix , "0.0/16" ] ]
+          IpProtocol: -1
+      SecurityGroupEgress:                
+        - CidrIp: 0.0.0.0/0
+          IpProtocol: -1
+  AlbSecurityGroup:  
+    Type: AWS::EC2::SecurityGroup
+    Properties: 
+      GroupName: AlbSecurityGroup
+      GroupDescription: Security group for load balancer      
+      VpcId: !Ref Vpc
+      SecurityGroupIngress:
+        - CidrIp: 0.0.0.0/0
+          FromPort: 80
+          ToPort: 80
+          IpProtocol: tcp              
+        - CidrIp: 0.0.0.0/0
+          FromPort: 443
+          ToPort: 443
+          IpProtocol: tcp              
+      SecurityGroupEgress:                
+        - CidrIp: 0.0.0.0/0
+          IpProtocol: -1
+  Ec2Role:
+    Type: AWS::IAM::Role
+    Properties: 
+      RoleName: Ec2Role
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement: 
+          - Effect: Allow
+            Principal: 
+              Service: 
+                - ec2.amazonaws.com
+            Action: 
+              - sts:AssumeRole                            
+      Policies:
+        - PolicyName: DescribeLogGroupsPolicy
+          PolicyDocument: 
+            Version: "2012-10-17"
+            Statement: 
+              - Effect: Allow
+                Action: logs:DescribeLogGroups
+                Resource: "*"
+  InstanceProfile: 
+    Type: AWS::IAM::InstanceProfile
+    Properties:       
+      Roles: 
+        - !Ref Ec2Role
+Outputs:
+  InstanceProfile:
+    Value: !Ref InstanceProfile
+    Export:
+      Name: !Sub "${AWS::StackName}-instance-profile"
+  Ec2SecurityGroup:
+    Value: !Ref Ec2SecurityGroup
+    Export:
+      Name: !Sub "${AWS::StackName}-ec2-sg"
+  AlbSecurityGroup:
+    Value: !Ref AlbSecurityGroup
+    Export:
+      Name: !Sub "${AWS::StackName}-alb-sg"

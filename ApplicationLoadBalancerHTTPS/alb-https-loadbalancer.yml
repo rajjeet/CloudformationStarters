@@ -1,0 +1,81 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Load balancer
+Parameters:
+  Vpc:
+    Type: String
+  AlbName:
+    Type: String
+  TargetGroupName:
+    Type: String
+  SecurityGroup:
+    Type: String
+  Subnet1:
+    Type: String
+  Subnet2:
+    Type: String
+  Instance1:
+    Type: String
+  Instance2:
+    Type: String
+  CertificateArn:
+    Type: String
+Resources:  
+  MyALB:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      IpAddressType: ipv4    
+      Name: !Ref AlbName
+      Scheme: internet-facing
+      SecurityGroups:
+        - !Ref SecurityGroup
+      Subnets:
+        - !Ref Subnet1
+        - !Ref Subnet2
+      Type: application
+  TargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      HealthCheckIntervalSeconds: 15
+      HealthCheckPath: /
+      HealthCheckPort: 80
+      HealthCheckProtocol: HTTP
+      HealthCheckTimeoutSeconds: 10
+      HealthyThresholdCount: 3
+      Matcher: 
+        HttpCode: 200-399
+      Name: !Ref TargetGroupName
+      Port: 80
+      Protocol: HTTP      
+      Targets:
+        - Id: !Ref Instance1
+        - Id: !Ref Instance2
+      TargetType: instance
+      UnhealthyThresholdCount: 2
+      VpcId: !Ref Vpc
+  Listener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties: 
+      Certificates:
+        - CertificateArn: !Ref CertificateArn
+      DefaultActions:
+        - TargetGroupArn: !Ref TargetGroup
+          Type: forward
+      LoadBalancerArn: !Ref MyALB
+      Port: 443
+      Protocol: HTTPS
+      # SslPolicy: String
+  ListenerRule:
+    Type: AWS::ElasticLoadBalancingV2::ListenerRule
+    Properties:
+      Actions:
+        - TargetGroupArn: !Ref TargetGroup
+          Type: forward
+      Conditions:
+        - Field: path-pattern
+          Values:
+            - "/*"
+      ListenerArn: !Ref Listener
+      Priority: 1
+Outputs:
+  AlbDnsName:
+    Value: !GetAtt MyALB.DNSName

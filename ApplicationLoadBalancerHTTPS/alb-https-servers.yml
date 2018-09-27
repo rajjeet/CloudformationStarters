@@ -1,0 +1,67 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Servers
+Parameters:
+  KeyPair:
+    Type: String
+    Description: Key Pair for EC2
+  ImageAmi:
+    Type: String
+    Description: Image Type
+  SecurityGroup:
+    Type: String
+    Description: Security Group of EC2
+  Subnet1:
+    Type: String
+    Description: Subnet 1 of EC2
+  Subnet2:
+    Type: String
+    Description: Subnet 2 of EC2
+  InstanceProfile:
+    Type: String
+    Description: IAM role of EC2
+Resources:  
+  Ec2Subnet1:
+    Type: AWS::EC2::Instance
+    Properties:      
+      ImageId: !Ref ImageAmi
+      InstanceType: t2.micro
+      KeyName: !Ref KeyPair
+      SecurityGroupIds:
+        - !Ref SecurityGroup
+      SubnetId: !Ref Subnet1
+      IamInstanceProfile: !Ref InstanceProfile
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash        
+          apt update
+          apt install apache2 -y
+          ufw allow 'Apache'
+          sudo "y" | sudo ufw enable
+          ufw allow 'OpenSSH'        
+          apt install awscli -y
+          sudo sh -c "echo 'instance 1' > /var/www/html/index.html"
+  Ec2Subnet2:
+    Type: AWS::EC2::Instance
+    Properties:      
+      ImageId: !Ref ImageAmi
+      InstanceType: t2.micro
+      KeyName: !Ref KeyPair
+      SecurityGroupIds:
+        - !Ref SecurityGroup
+      SubnetId: !Ref Subnet2
+      IamInstanceProfile: !Ref InstanceProfile
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash        
+          apt update
+          apt install apache2 -y
+          ufw allow 'Apache'
+          sudo "y" | sudo ufw enable
+          ufw allow 'OpenSSH'
+          apt install awscli -y
+          sudo sh -c "echo 'instance 2' > /var/www/html/index.html" 
+Outputs:
+  Instance1:
+    Value: !Ref Ec2Subnet1
+  Instance2:
+    Value: !Ref Ec2Subnet2
