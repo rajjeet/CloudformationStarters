@@ -1,0 +1,15 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: SSM Inventory
+Parameters:
+  BucketName:
+    Type: String
+Resources:
+  DemoResourceDataSync:
+    Type: "AWS::SSM::ResourceDataSync"
+    Properties:    
+      BucketName: !Ref BucketName
+      BucketRegion: !Ref AWS::Region
+      SyncFormat: JsonSerDe
+      SyncName: DemoResourceDataSync
+      BucketPrefix: DemoResourceDataSync      
+  

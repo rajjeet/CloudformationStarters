@@ -1,0 +1,39 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: SSM State Manager
+Parameters:
+  BucketName:
+    Type: String
+  SSMDocument:
+    Type: String
+Resources:
+  DemoAssociation:
+    Type: "AWS::SSM::Association"
+    Properties: 
+      AssociationName: DemoAssociation            
+      Name: !Ref SSMDocument
+      OutputLocation:
+        S3Location: 
+          OutputS3BucketName: !Ref BucketName
+          OutputS3KeyPrefix: DemoAssociation
+      ScheduleExpression: rate(1 hour)
+      Targets:
+        - Key: tag:AssociationTarget
+          Values:
+            - AWSPVDriver
+  InventoryAssociation:
+    Type: "AWS::SSM::Association"
+    Properties: 
+      AssociationName: InventoryAssociation
+      Name: AWS-GatherSoftwareInventory
+      OutputLocation:
+        S3Location: 
+          OutputS3BucketName: !Ref BucketName
+          OutputS3KeyPrefix: InventoryAssociation
+      Parameters:
+        files:
+          - '[{"Path":"/var/log","Pattern":["*"],"Recursive":true}]'
+      ScheduleExpression: rate(1 hour)
+      Targets:
+        - Key: InstanceIds
+          Values:
+            - "*"    

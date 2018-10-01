@@ -1,0 +1,72 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: SSM Patch
+Parameters:
+  UbuntuPatchGroupKey:
+    Type: String    
+  MaintenanceWindowRoleArn:
+    Type: String
+  BucketName:
+    Type: String
+Resources:
+  CustomPatchBaseline:
+    Type: "AWS::SSM::PatchBaseline"
+    Properties:
+      OperatingSystem: UBUNTU
+      PatchGroups: 
+        - !Ref UbuntuPatchGroupKey
+      Description: Patch baseline for ubuntu instances
+      ApprovedPatchesComplianceLevel: MEDIUM
+      ApprovalRules:
+        PatchRules:
+          - PatchFilterGroup: 
+              PatchFilters:
+                - Key: PRIORITY
+                  Values:
+                    - Important
+            ComplianceLevel: MEDIUM
+            EnableNonSecurity: true
+            ApproveAfterDays: 0
+      Name: UbuntuPatchBaseline   
+  DemoMaintenanceWindow:
+    Type: "AWS::SSM::MaintenanceWindow"
+    Properties:      
+      AllowUnassociatedTargets: true
+      Cutoff: 1
+      Schedule: rate(3 hours)
+      Duration: 2
+      Name: DemoMaintenanceWindow
+  DemoMaintenanceTarget:
+    Type: "AWS::SSM::MaintenanceWindowTarget"
+    Properties:      
+      OwnerInformation: !Ref UbuntuPatchGroupKey
+      WindowId: !Ref DemoMaintenanceWindow
+      ResourceType: INSTANCE
+      Targets: 
+        - Key: tag:Patch Group
+          Values:
+            - !Ref UbuntuPatchGroupKey
+      Name: DemoMaintenanceTarget
+  DemoMaintenanceWindowTask:
+    Type: "AWS::SSM::MaintenanceWindowTask"
+    Properties:
+      MaxErrors: 1      
+      ServiceRoleArn: !Ref MaintenanceWindowRoleArn
+      Priority: 1
+      MaxConcurrency: 2
+      Targets: 
+        - Key: WindowTargetIds
+          Values:
+            - !Ref DemoMaintenanceTarget 
+      Name: DemoMaintenanceWindowTask
+      TaskArn: AWS-RunPatchBaseline
+      TaskInvocationParameters:
+        MaintenanceWindowRunCommandParameters:
+          Parameters:
+            Operation:
+              - Install          
+      WindowId: !Ref DemoMaintenanceWindow      
+      TaskType: RUN_COMMAND
+      LoggingInfo: 
+        S3Bucket: !Ref BucketName
+        Region: !Ref AWS::Region
+        S3Prefix: DemoPatchBaseline

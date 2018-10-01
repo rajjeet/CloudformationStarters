@@ -1,0 +1,148 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Security
+Parameters:
+  Vpc:
+    Type: String
+  IpAddress:
+    Type: String
+  VpcPrefix:
+    Type: String
+Resources:  
+  Ec2SecurityGroup:  
+    Type: AWS::EC2::SecurityGroup
+    Properties: 
+      GroupName: WebSecurityGroup
+      GroupDescription: Security group for web server
+      VpcId: !Ref Vpc
+      SecurityGroupIngress:
+        - CidrIp: !Sub "${IpAddress}"
+          FromPort: 22
+          ToPort: 22
+          IpProtocol: tcp
+        - CidrIp: !Join [ ".", [ !Ref VpcPrefix , "0.0/16" ] ]
+          IpProtocol: -1
+      SecurityGroupEgress:
+        - CidrIp: 0.0.0.0/0
+          IpProtocol: -1
+  Ec2Role:
+    Type: AWS::IAM::Role
+    Properties: 
+      RoleName: Ec2Role
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement: 
+          - Effect: Allow
+            Principal: 
+              Service: 
+                - ec2.amazonaws.com
+            Action: 
+              - sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonEC2RoleforSSM
+  InstanceProfile: 
+    Type: AWS::IAM::InstanceProfile
+    Properties:       
+      Roles: 
+        - !Ref Ec2Role
+  # DocumentOperator:
+  #   Type: AWS::IAM::User
+  #   Properties: 
+  #     UserName: AutomationUser
+  #     LoginProfile:
+  #       Password: Nerds4Life!
+  #       PasswordResetRequired: false            
+  #     Policies:
+  #       - PolicyName: DocumentOperator
+  #         PolicyDocument:
+  #           Version: 2012-10-17
+  #           Statement:
+  #             - Effect: Allow
+  #               Action:
+  #               - ssm:DescribeAutomationExecutions
+  #               - ssm:DescribeAutomationStepExecutions
+  #               - ssm:DescribeDocuments
+  #               - ssm:GetAutomationExecution
+  #               - ssm:GetDocument
+  #               - ssm:ListDocuments
+  #               - ssm:ListDocumentVersions
+  #               - ssm:StartAutomationExecution
+  #               Resource: "*"        
+  AutomationServiceRole:
+    Type: AWS::IAM::Role
+    Properties: 
+      RoleName: AutomationServiceRole
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement: 
+          - Effect: Allow
+            Principal: 
+              Service: 
+                - ec2.amazonaws.com
+                - ssm.amazonaws.com
+            Action: 
+              - sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonSSMAutomationRole        
+  MaintenanceWindowRole:
+    Type: AWS::IAM::Role
+    Properties: 
+      RoleName: MaintenanceWindowRole
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement: 
+          - Effect: Allow
+            Principal: 
+              Service: 
+                - ec2.amazonaws.com
+                - ssm.amazonaws.com
+            Action: 
+              - sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonSSMMaintenanceWindowRole
+  S3BucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties: 
+      Bucket: 
+        !Ref S3Bucket
+      PolicyDocument: 
+        Version: 2012-10-17
+        Statement: 
+          - 
+            Sid: SSMBucketPermissionsCheck
+            Effect: Allow
+            Principal:
+              Service: ssm.amazonaws.com
+            Action: 
+              - s3:GetBucketAcl              
+            Resource:
+              !Sub 
+                - "arn:aws:s3:::${BucketName}"
+                - BucketName: !Ref BucketName
+          -
+            Sid: SSMBucketDelivery
+            Effect: Allow
+            Principal:
+              Service: ssm.amazonaws.com
+            Action: 
+              - s3:PutObject
+            Resource:
+              !Sub 
+                - "arn:aws:s3:::${BucketName}/*"
+                - BucketName: !Ref BucketName
+Outputs:
+  InstanceProfile:
+    Value: !Ref InstanceProfile
+    Export:
+      Name: !Sub "${AWS::StackName}-instance-profile"
+  Ec2SecurityGroup:
+    Value: !Ref Ec2SecurityGroup
+    Export:
+      Name: !Sub "${AWS::StackName}-ec2-sg"
+  AutomationServiceRoleArn:
+    Value: !GetAtt AutomationServiceRole.Arn
+    Export:
+      Name: !Sub "${AWS::StackName}-automation-service-role-arn"
+  MaintenanceWindowRoleArn:
+    Value: !GetAtt MaintenanceWindowRole.Arn
+    Export:
+      Name: !Sub "${AWS::StackName}-maintenance-window-role-arn"

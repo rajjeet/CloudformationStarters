@@ -1,0 +1,97 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Servers
+Parameters:
+  KeyPair:
+    Type: String
+  UbuntuImageAmi:
+    Type: String    
+  WindowsImageAmi:
+    Type: String
+    Default: ""
+  SecurityGroup:
+    Type: String
+  Subnet1:
+    Type: String
+  InstanceProfile:
+    Type: String
+  UbuntuPatchGroupKey:
+    Type: String
+Resources:  
+  Instance1:
+    Type: AWS::EC2::Instance
+    Properties:      
+      ImageId: !Ref UbuntuImageAmi
+      InstanceType: t2.micro
+      KeyName: !Ref KeyPair
+      SecurityGroupIds:
+        - !Ref SecurityGroup
+      SubnetId: !Ref Subnet1
+      IamInstanceProfile: !Ref InstanceProfile
+      Tags:
+        - Key: Patch Group
+          Value: !Ref UbuntuPatchGroupKey
+        - Key: AssociationTarget
+          Value: Mistake
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash        
+          apt update
+          apt install apache2 -y
+          ufw allow 'Apache'
+          sudo "y" | sudo ufw enable
+          ufw allow 'OpenSSH'        
+          apt install awscli -y
+          sudo sh -c "echo 'instance 1' > /var/www/html/index.html"
+  Instance2:
+    Type: AWS::EC2::Instance
+    Properties:      
+      ImageId: !Ref UbuntuImageAmi
+      InstanceType: t2.micro
+      KeyName: !Ref KeyPair
+      SecurityGroupIds:
+        - !Ref SecurityGroup
+      SubnetId: !Ref Subnet1
+      IamInstanceProfile: !Ref InstanceProfile
+      Tags:
+        - Key: Patch Group
+          Value: Mistake
+        - Key: AssociationTarget
+          Value: AWSPVDriver
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash        
+          apt update
+          apt install apache2 -y
+          ufw allow 'Apache'
+          sudo "y" | sudo ufw enable
+          ufw allow 'OpenSSH'        
+          apt install awscli -y
+          sudo sh -c "echo 'instance 1' > /var/www/html/index.html"
+#  Instance3:
+#     Type: AWS::EC2::Instance
+#     Properties:      
+#       ImageId: !Ref WindowsImageAmi
+#       InstanceType: t2.micro
+#       KeyName: !Ref KeyPair
+#       SecurityGroupIds:
+#         - !Ref SecurityGroup
+#       SubnetId: !Ref Subnet1
+#       IamInstanceProfile: !Ref InstanceProfile
+#       Tags:
+#         - Key: Patch Group
+#           Value: MyWindows
+#       UserData:
+#         Fn::Base64: !Sub |
+#           #!/bin/bash        
+#           apt update
+#           apt install apache2 -y
+#           ufw allow 'Apache'
+#           sudo "y" | sudo ufw enable
+#           ufw allow 'OpenSSH'        
+#           apt install awscli -y
+#           sudo sh -c "echo 'instance 1' > /var/www/html/index.html"
+Outputs:
+  Instance1:
+    Value: !Ref Instance1
+  Instance2:
+    Value: !Ref Instance2

@@ -1,0 +1,131 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: SSM Automation
+Parameters:
+  AutomationServiceRoleArn:
+    Type: String
+Resources:
+  RestartDocument:
+    Type: "AWS::SSM::Document"
+    Properties: 
+      DocumentType: Automation 
+      Content:
+        description: Restart EC2 instances
+        schemaVersion: '0.3'
+        assumeRole: !Ref AutomationServiceRoleArn
+        parameters:
+          InstanceId: 
+            type: StringList
+            description: Instances to restart
+        mainSteps:
+          - name: stopInstances
+            action: aws:changeInstanceState
+            inputs:
+              InstanceIds: "{{ InstanceId }}"
+              DesiredState: stopped
+          - name: startInstances
+            action: aws:changeInstanceState
+            inputs:
+              InstanceIds: "{{ InstanceId }}"
+              DesiredState: running 
+  BranchingDocument:
+    Type: AWS::SSM::Document
+    Properties:
+      DocumentType: Automation
+      Content:
+        schemaVersion: '0.3'
+        # assumeRole: !Ref AutomationServiceRoleArn
+        # parameters:
+        #     AutomationAssumeRole:
+        #       default: ""
+        #       type: String
+        mainSteps:
+        - name: GetInstance
+          action: aws:executeAwsApi
+          inputs:
+            Service: ssm
+            Api: DescribeInstanceInformation
+          outputs:
+          - Name: myInstance
+            Selector: "$.InstanceInformationList[0].InstanceId"
+            Type: String
+          - Name: platform
+            Selector: "$.InstanceInformationList[0].PlatformType"
+            Type: String
+        - name: ChooseOSforCommands
+          action: aws:branch
+          inputs:
+            Choices:
+            - NextStep: runPowerShellCommand
+              Variable: "{{ GetInstance.platform }}"
+              StringEquals: Windows
+            - NextStep: runShellCommand
+              Variable: "{{ GetInstance.platform }}"
+              StringEquals: Linux
+            Default:
+              Sleep
+        - name: runShellCommand
+          action: aws:runCommand
+          inputs:
+            DocumentName: AWS-RunShellScript
+            InstanceIds:
+              - "{{ GetInstance.myInstance }}"
+            Parameters:
+              commands:
+                - ls
+          isEnd: true
+        - name: runPowerShellCommand
+          action: aws:runCommand
+          inputs:
+            DocumentName: AWS-RunPowerShellScript
+            InstanceIds:
+            - "{{ GetInstance.myInstance }}"
+            Parameters:
+              commands:
+                - Get-Childitem
+          isEnd: true
+        - name: Sleep        
+          action: aws:sleep
+          inputs:
+            Duration: PT3S
+  TestDocument:
+    Type: AWS::SSM::Document
+    Properties:
+      DocumentType: Automation
+      Content:
+        schemaVersion: '0.3'
+        assumeRole: !Ref AutomationServiceRoleArn        
+        mainSteps:
+        - 
+          name: GetInstance
+          action: aws:executeAwsApi
+          inputs:
+            Service: ssm
+            Api: DescribeInstanceInformation
+          outputs:
+          - Name: InstanceInformationList
+            Selector: "$.InstanceInformationList[0]"
+            Type: String          
+  CheckHostnameDocument:
+    Type: AWS::SSM::Document
+    Properties:
+      DocumentType: Command
+      Content:
+        schemaVersion: "2.2"
+        mainSteps:
+        -
+          name: runShellScript
+          action: aws:runShellScript
+          inputs:
+            runCommand:
+              - hostname
+Outputs:
+  RestartDocument:
+    Value: !Ref RestartDocument
+  BranchingDocument:
+    Value: !Ref BranchingDocument
+  TestDocument:
+    Value: !Ref TestDocument
+  CheckHostNameDocument:
+    Value: !Ref CheckHostnameDocument
+
+
