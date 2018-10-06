@@ -1,0 +1,324 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Servers
+Parameters:
+  KeyPair:
+    Type: String
+  ImageAmi:
+    Type: String      
+  PublicSecurityGroup:
+    Type: String
+  AppSecurityGroup:
+    Type: String
+  SshSecurityGroup:
+    Type: String
+  EfsSecurityGroup:
+    Type: String
+  PublicSubnetAz1:
+    Type: String
+  PublicSubnetAz2:
+    Type: String  
+  AppSubnetAz1:
+    Type: String
+  AppSubnetAz2:
+    Type: String  
+  InstanceProfile:
+    Type: String
+  Vpc:
+    Type: String
+  Efs:
+    Type: String
+  DBName:
+    Type: String    
+  RootDBUser:
+    Type: String
+  DBPassword:
+    Type: String
+    NoEcho: true
+  DatabaseEndpoint:
+    Type: String
+  LoadBalancerName:
+    Type: String
+    Default: robust-wp-alb
+  CertificateArn:
+    Type: String    
+  S3LoggingBucket:
+    Type: String
+Resources:  
+  ApplicationLoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      IpAddressType: ipv4
+      LoadBalancerAttributes:
+        - Key: access_logs.s3.enabled
+          Value: true
+        - Key: access_logs.s3.bucket
+          Value: !Ref S3LoggingBucket
+        - Key: access_logs.s3.prefix
+          Value: lb-accesslogs
+      Name: !Ref LoadBalancerName
+      Scheme: internet-facing
+      SecurityGroups:
+        - !Ref PublicSecurityGroup
+      Subnets:
+        - !Ref PublicSubnetAz1
+        - !Ref PublicSubnetAz2
+      Type: application      
+  TargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      HealthCheckIntervalSeconds: 15
+      HealthCheckPath: /
+      HealthCheckPort: 80
+      HealthCheckProtocol: HTTP
+      HealthCheckTimeoutSeconds: 10
+      HealthyThresholdCount: 3
+      Matcher: 
+        HttpCode: 200-399      
+      Port: 80
+      Protocol: HTTP      
+      TargetGroupAttributes:
+        - Key: stickiness.enabled
+          Value: true
+        - Key: stickiness.lb_cookie.duration_seconds
+          Value: 10
+      TargetType: instance      
+      UnhealthyThresholdCount: 2
+      VpcId: !Ref Vpc
+  # HttpsListener:
+  #   Type: AWS::ElasticLoadBalancingV2::Listener
+  #   Properties: 
+  #     Certificates:
+  #       - CertificateArn: !Ref CertificateArn
+  #     DefaultActions:
+  #       - TargetGroupArn: !Ref TargetGroup
+  #         Type: forward
+  #     LoadBalancerArn: !Ref ApplicationLoadBalancer
+  #     Port: 443
+  #     Protocol: HTTPS
+  HttpListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:   
+      DefaultActions:
+        - TargetGroupArn: !Ref TargetGroup
+          Type: forward      
+      LoadBalancerArn: !Ref ApplicationLoadBalancer
+      Port: 80
+      Protocol: HTTP
+  LaunchConfiguration:
+    Type: AWS::AutoScaling::LaunchConfiguration
+    Metadata:
+      AWS::CloudFormation::Init: 
+        configSets:
+          testScalingPolicy:
+            - setupStress
+          default: 
+            - setupWww
+            # - setupDb
+            - mountEfs
+            - setupWordpressFiles
+            - configureWPConfig
+        setupWww:
+          commands:
+            1_setupWww:
+              command: mkdir -p /var/www/html              
+            2_installLampFromAmzn:
+              command: amazon-linux-extras install -y lamp-mariadb10.2-php7.2 php7.2
+            3_addUserToApacheGroup:
+              command: usermod -a -G apache ec2-user              
+            4_changeFileOwner:
+              command: chown -R ec2-user:apache /var/www
+            5_changeDirPermissions:
+              command: chmod 2775 /var/www && find /var/www -type d -exec chmod 2775 {} \;
+            6_changeFilePermissions:
+              command: find /var/www -type f -exec chmod 0664 {} \;
+          packages:
+            yum:
+              httpd: []
+              # mariadb-server: []
+              amazon-efs-utils: []
+          services:
+            sysvinit:
+              httpd:
+                enabled: true
+                ensureRunning: true
+                sources: 
+                  - /var/www/html
+              # mariadb:
+              #   enabled: true
+              #   ensureRunning: true
+        setupDb:
+          commands:
+            1_setPassword:
+              command:
+                !Sub 
+                  - mysql -e "UPDATE mysql.user SET Password=PASSWORD('${password}') WHERE User='root';"
+                  - { password: !Ref DBPassword }
+            2_deleteAnonUsers:
+              command:
+                mysql -e "DELETE FROM mysql.user WHERE User='';"
+            3_limitRootToLocal:
+              command:
+                mysql -e "DELETE FROM mysql.user WHERE User='root' AND Host NOT IN ('localhost', '127.0.0.1', '::1');"
+            4_removeTestDb:
+              command:
+                mysql -e "DROP DATABASE IF EXISTS test; DELETE FROM mysql.db WHERE db = 'test' OR Db = 'test\_%';"
+            5_createWordpress:
+              command:
+                mysql -e "CREATE DATABASE IF NOT EXISTS wordpress;"
+            5_flushpriviledges:
+              command: mysql -e "FLUSH PRIVILEGES;"
+        mountEfs:
+          commands:
+            1_mountEfs:
+              command: 
+                !Sub
+                  - mount -t efs ${efsId}:/ /var/www/html
+                  - { efsId: !Ref Efs }
+        setupWordpressFiles:
+          commands:
+            1_downloadWordpress:
+              command: wget https://wordpress.org/wordpress-4.9.8.tar.gz
+              test: "if [ -f wordpress-4.9.8.tar.gz ] || [ -f /var/www/html/wp-config.php ]; then exit 1; else exit 0; fi"
+              cwd: "/home/ec2-user"          
+            2_extract:
+              command: tar -xzf wordpress-4.9.8.tar.gz
+              test: "if [ -f wordpress ] || [ -f /var/www/html/wp-config.php ]; then exit 1; else exit 0; fi"
+              cwd: "/home/ec2-user"
+            3_move: 
+              command: cp -rn wordpress/* /var/www/html
+              test: "if [ ! -d wordpress ] || [ -f /var/www/html/wp-config.php ]; then exit 1; else exit 0; fi"
+              cwd: "/home/ec2-user"
+            4_cleanup: 
+              command: rm -rf wordpress*
+              cwd: "/home/ec2-user"
+            # 5_phpinfo:
+            #   command: echo "<?php phpinfo(INFO_GENERAL) ?>" > /var/www/html/phpinfo.php
+        configureWPConfig:
+          commands:
+            1_duplicate:
+              command: cp -n wp-config-sample.php wp-config.php
+              test: "if [ ! -f wp-config-sample.php ]; then exit 1; else exit 0; fi"
+              cwd: /var/www/html
+            2_database_name:
+              command: 
+                !Sub
+                  - sed -i 's/database_name_here/${databaseName}/' wp-config.php
+                  - { databaseName: !Ref DBName }
+              cwd: /var/www/html
+            3_username_name:
+              command: 
+                !Sub
+                  - sed -i 's/username_here/${rootUser}/' wp-config.php
+                  - {rootUser: !Ref RootDBUser }
+              cwd: /var/www/html
+            4_password_here:
+              command: 
+                !Sub 
+                  - sed -i 's/password_here/${password}/' wp-config.php
+                  - { password: !Ref DBPassword }
+              cwd: /var/www/html
+            5_db_name:
+              command: 
+                !Sub
+                  - sed -i 's/localhost/${dbEndpoint}/' wp-config.php
+                  - { dbEndpoint: !Ref DatabaseEndpoint  }
+              cwd: /var/www/html              
+        setupStress:
+          commands:
+            1_hookupFedoraProject:
+              command: yum install https://dl.fedoraproject.org/pub/epel/epel-release-latest-7.noarch.rpm -y
+              test: yum install https://dl.fedoraproject.org/pub/epel/epel-release-latest-7.noarch.rpm -y
+            2_stress:
+              command: yum install stress -y
+    Properties:            
+      ImageId: !Ref ImageAmi
+      InstanceType: t2.micro
+      KeyName: !Ref KeyPair      
+      SecurityGroups:
+        - !Ref AppSecurityGroup
+        - !Ref SshSecurityGroup
+        - !Ref EfsSecurityGroup
+      IamInstanceProfile: !Ref InstanceProfile
+      UserData: 
+        Fn::Base64:
+          !Sub |
+            #!/bin/bash -xe
+            yum update -y 
+            yum install -y aws-cfn-bootstrap
+            /opt/aws/bin/cfn-init -v -s ${AWS::StackName} -r LaunchConfiguration --region ${AWS::Region}
+            /opt/aws/bin/cfn-signal -e $? -s ${AWS::StackName} -r LaunchConfiguration --region ${AWS::Region}
+  AutoScalingGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:    
+      Cooldown: 300
+      DesiredCapacity: 1
+      HealthCheckGracePeriod: 120
+      HealthCheckType: ELB    
+      LaunchConfigurationName: !Ref LaunchConfiguration            
+      MaxSize: 4    
+      MinSize: 1        
+      Tags:
+        - Key: Application
+          Value: robust-wp
+          PropagateAtLaunch: true
+      VPCZoneIdentifier:
+        - !Ref AppSubnetAz1
+        - !Ref AppSubnetAz2
+      TargetGroupARNs:
+        - !Ref TargetGroup
+  ScaleUpPolicy:
+    Type: AWS::AutoScaling::ScalingPolicy
+    Properties:
+      AdjustmentType: ChangeInCapacity
+      AutoScalingGroupName: !Ref AutoScalingGroup      
+      PolicyType: StepScaling      
+      StepAdjustments:
+        - MetricIntervalLowerBound: 0          
+          ScalingAdjustment: "1"            
+  ScaleDownPolicy:
+    Type: AWS::AutoScaling::ScalingPolicy
+    Properties:
+      AdjustmentType: ChangeInCapacity
+      AutoScalingGroupName: !Ref AutoScalingGroup      
+      PolicyType: StepScaling      
+      StepAdjustments:
+        - MetricIntervalUpperBound: 0          
+          ScalingAdjustment: "-1"            
+  CPUAlarmHigh:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      EvaluationPeriods: '2'
+      Statistic: Average
+      Threshold: '70'
+      AlarmDescription: Alarm if CPU too high or metric disappears indicating instance
+        is down
+      Period: '60'
+      AlarmActions:
+      - !Ref ScaleUpPolicy
+      Namespace: AWS/EC2
+      Dimensions:
+      - Name: AutoScalingGroupName
+        Value: !Ref AutoScalingGroup
+      ComparisonOperator: GreaterThanThreshold
+      MetricName: CPUUtilization
+  CPUAlarmLow:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      EvaluationPeriods: '3'
+      Statistic: Average
+      Threshold: '20'
+      AlarmDescription: Alarm if CPU low or metric disappears indicating instance
+        is up
+      Period: '60'
+      AlarmActions:
+      - !Ref ScaleDownPolicy
+      Namespace: AWS/EC2
+      Dimensions:
+      - Name: AutoScalingGroupName
+        Value: !Ref AutoScalingGroup
+      ComparisonOperator: LessThanThreshold
+      MetricName: CPUUtilization
+Outputs:
+  AlbDnsName:
+    Value: !GetAtt ApplicationLoadBalancer.DNSName          
+

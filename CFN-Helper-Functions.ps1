@@ -1,19 +1,19 @@
-function Install-CFNStack ($stackName, $templateBody, $parameterList, $region, $timeout = 600) {
+function Install-CFNStack ($stackName, $templateBody, $parameterList, $region, $timeout = 600, [switch] $skipWait) {
   $ErrorActionPreference = "Stop"  
   Import-Module AWSPowershell
   Set-DefaultAWSRegion -Region $region
   try {    
-    return Update-MyCFNStack -stackName $stackName -templateBody $templateBody -parameterList $parameterList -timeout $timeout
+    return Update-MyCFNStack -stackName $stackName -templateBody $templateBody -parameterList $parameterList -timeout $timeout -skipWait:$skipWait
   } catch [InvalidOperationException] {
     if( $PSItem.Exception.Message -eq "Stack [$stackName] does not exist") {
-      return New-MyCFNStack -stackName $stackName -templateBody $templateBody -parameterList $parameterList -timeout $timeout
+      return New-MyCFNStack -stackName $stackName -templateBody $templateBody -parameterList $parameterList -timeout $timeout -skipWait:$skipWait
     } elseif ($PSItem.Exception.Message -eq "No updates are to be performed.") {
       Write-Host "No updates are to be performed on Stack [$stackName]"
       return (Get-CFNStack -StackName $stackName).Outputs
     } elseif ($PSItem.Exception.Message -match "Stack:arn:aws:cloudformation:${region}.*stack/${stackName}/.* is in ROLLBACK_COMPLETE state and can not be updated.") {
         Write-Host "Stack [${stackName}] is in ROLLBACK_COMPLETE state and needs to be recreated..."
         Uninstall-CFNStack -StackName $stackName | Out-Null
-        return New-MyCFNStack -stackName $stackName -templateBody $templateBody -parameterList $parameterList -timeout $timeout
+        return New-MyCFNStack -stackName $stackName -templateBody $templateBody -parameterList $parameterList -timeout $timeout -skipWait:$skipWait
     }
      else {
       Throw "[$stackName] $PSItem.Exception"
@@ -21,21 +21,25 @@ function Install-CFNStack ($stackName, $templateBody, $parameterList, $region, $
   }  
 }
 
-function Update-MyCFNStack ($stackName, $templateBody, $parameterList, $timeout) {
+function Update-MyCFNStack ($stackName, $templateBody, $parameterList, $timeout, [switch] $skipWait) {
   Update-CFNStack -Stackname $stackName -TemplateBody $templateBody -Parameter $parameterList -Capability CAPABILITY_NAMED_IAM
   Write-Host "Updating stack [${stackName}]..."
-  Wait-CFNStack -StackName $stackName -Timeout $timeout -Status UPDATE_COMPLETE,UPDATE_ROLLBACK_COMPLETE
-  CheckCFNRollback -stackName $stackName
+  if (-Not ($skipWait)) {
+    Wait-CFNStack -StackName $stackName -Timeout $timeout -Status UPDATE_COMPLETE,UPDATE_ROLLBACK_COMPLETE
+  }  
+  CheckCFNRollback -stackName $stackName  
   Write-Host "Stack [${stackName}] Updated." -ForegroundColor Green
   return (Get-CFNStack -StackName $stackName).Outputs
 }
 
-function New-MyCFNStack ($stackName, $templateBody, $parameterList, $timeout){
+function New-MyCFNStack ($stackName, $templateBody, $parameterList, $timeout, [switch] $skipWait){
   New-CFNStack -Stackname $stackName -TemplateBody $templateBody -Parameter $parameterList -Capability CAPABILITY_NAMED_IAM
   Write-Host "Creating stack [${stackName}]..."
-  Wait-CFNStack -StackName $stackName -Timeout $timeout -Status CREATE_COMPLETE,ROLLBACK_COMPLETE
+  if (-Not ($skipWait)) {
+    Wait-CFNStack -StackName $stackName -Timeout $timeout -Status CREATE_COMPLETE,ROLLBACK_COMPLETE
+  }  
   CheckCFNRollback -stackName $stackName
-  Write-Host "Stack [${stackName}] created."
+  Write-Host "Stack [${stackName}] created." -ForegroundColor Green
   return (Get-CFNStack -StackName $stackName).Outputs
 }
 
@@ -81,5 +85,54 @@ function Invoke-EC2KeyPairCreation ($KeyPairName, $BucketName) {
       Write-S3Object -BucketName $keyPairBucketName -Key $keyPairName -File ".\${keyPairName}.pem" | Out-Null
       Write-Host "Keypair ${keyPairName} created." -ForegroundColor Green
     }
+  }
+}
+function Confirm-RegisteredDomainNameServers ($DomainName, $NameServerList){
+  $ans = @()
+  $NameServerList.Split(",").ForEach{
+    $ns = New-Object Amazon.Route53Domains.Model.Nameserver
+    $ns.Name = $_
+    $ans += $ns
+  }
+  
+  $dnsMissing = $false
+  (Get-R53DDomainDetail -DomainName $DomainName).Nameservers.Name.ForEach{    
+    if (($ans.Name) -notcontains $_) {
+      Write-Host "[$_] missing..." -ForegroundColor Red
+      $dnsMissing = $true
+    }    
+  }
+  if ($dnsMissing){
+    Update-R53DDomainNameserver -DomainName $domainName -Nameserver $nameServers
+    Write-Host "Nameservers of $domainname updated!" -ForegroundColor Green
+  }
+} 
+function Add-ACMCNameToRoute53 ($CertStackName, $HostedZoneId) {
+  $reasons = (Get-CFNStackEvents -StackName "robust-wp-certificate").ResourceStatusReason
+  $cnameString = $reasons |  `
+    Where-Object {$_.IndexOf('Content of DNS Record is: {Name: ') -eq 0} | `
+    Select-Object -First 1
+
+  if ($cnameString.Length -gt 0) {
+
+    $name = $cnameString.Substring($cnameString.IndexOf("{Name: _") + 7, 46)
+    $value = $cnameString.Substring($cnameString.IndexOf("Value: _") + 7, 65)
+        
+    $change = New-Object Amazon.Route53.Model.Change
+    $change.Action = "CREATE"
+    $change.ResourceRecordSet = New-Object Amazon.Route53.Model.ResourceRecordSet
+    $change.ResourceRecordSet.Name = $name
+    $change.ResourceRecordSet.Type = "CNAME"
+    $change.ResourceRecordSet.ResourceRecords.Add(@(Value=$value))
+
+    # $change.ResourceRecordSet.AliasTarget = New-Object Amazon.Route53.Model.AliasTarget
+    # $change.ResourceRecordSet.AliasTarget.HostedZoneId = "Z35SXDOTRQ7X7K"
+    # $change.ResourceRecordSet.AliasTarget.DNSName = "${albDnsName}."
+    # $change.ResourceRecordSet.AliasTarget.EvaluateTargetHealth = $false
+    Edit-R53ResourceRecordSet -HostedZoneId $HostedZoneId -ChangeBatch_Change $change
+    Wait-CFNStack -StackName $CertStackName -Status CREATE_COMPLETE -Timeout 1200
+  } else {
+    Start-Sleep -Seconds 10
+    Add-ACMCNameToRoute53 -CertStackName $CertStackName -HostedZoneId $HostedZoneId
   }
 }

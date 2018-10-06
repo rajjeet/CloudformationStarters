@@ -1,2 +1,4 @@
 **/execute_cfn_private.ps1
 **/*.pem
+**/*.ppk
+**/*.stackdump

@@ -1,0 +1,185 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Security
+Parameters:
+  Vpc:
+    Type: String
+  HomeIpAddress:
+    Type: String
+  MobileIpAddress:
+    Type: String
+  VpcPrefix:
+    Type: String
+  BucketName:
+    Type: String
+Resources:  
+  # Security Groups
+  SshSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:       
+      GroupDescription: Security group for SSH/RDP access
+      VpcId: !Ref Vpc
+      SecurityGroupIngress:
+        # - CidrIp: !Ref HomeIpAddress
+        #   FromPort: 22
+        #   ToPort: 22
+        #   IpProtocol: tcp        
+        # - CidrIp: !Ref MobileIpAddress
+        #   FromPort: 22
+        #   ToPort: 22
+        #   IpProtocol: tcp        
+        - CidrIp: 0.0.0.0/0
+          FromPort: 22
+          ToPort: 22
+          IpProtocol: tcp        
+      Tags:
+        - Key: Name
+          Value: Ssh-SG
+  PublicSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:       
+      GroupDescription: Security group for internet-facing components
+      VpcId: !Ref Vpc
+      SecurityGroupIngress:
+        - CidrIp: 0.0.0.0/0
+          FromPort: 80
+          ToPort: 80
+          IpProtocol: tcp        
+        - CidrIp: 0.0.0.0/0
+          FromPort: 443
+          ToPort: 443
+          IpProtocol: tcp        
+      SecurityGroupEgress:
+        - CidrIp: 0.0.0.0/0          
+          IpProtocol: -1
+      Tags:
+        - Key: Name
+          Value: Public-SG
+  AppSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:       
+      GroupDescription: Security group for components receiving HTTP/HTTPS traffic from public components
+      VpcId: !Ref Vpc
+      SecurityGroupIngress:
+        - SourceSecurityGroupId: !Ref PublicSecurityGroup
+          FromPort: 80
+          ToPort: 80
+          IpProtocol: tcp        
+        - SourceSecurityGroupId: !Ref PublicSecurityGroup
+          FromPort: 443
+          ToPort: 443
+          IpProtocol: tcp
+        - SourceSecurityGroupId: !Ref SshSecurityGroup
+          FromPort: 22
+          ToPort: 22
+          IpProtocol: tcp
+      SecurityGroupEgress:
+        - CidrIp: 0.0.0.0/0          
+          FromPort: 443
+          ToPort: 443
+          IpProtocol: tcp
+      Tags:
+        - Key: Name
+          Value: App-SG
+  DataSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:       
+      GroupDescription: Security group for databases
+      VpcId: !Ref Vpc
+      SecurityGroupIngress:
+        - SourceSecurityGroupId: !Ref AppSecurityGroup
+          FromPort: 3306
+          ToPort: 3306
+          IpProtocol: tcp        
+        - SourceSecurityGroupId: !Ref PublicSecurityGroup
+          FromPort: 3306
+          ToPort: 3306
+          IpProtocol: tcp        
+        - SourceSecurityGroupId: !Ref SshSecurityGroup
+          FromPort: 22
+          ToPort: 22
+          IpProtocol: tcp
+      Tags:
+        - Key: Name
+          Value: Data-SG
+  EfsSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:       
+      GroupDescription: Security group for databases
+      VpcId: !Ref Vpc
+      Tags:
+        - Key: Name
+          Value: Efs-SG
+  EfsSecurityGroupIngress:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:             
+      GroupId: !Ref EfsSecurityGroup      
+      IpProtocol: -1      
+      SourceSecurityGroupId: !Ref EfsSecurityGroup  
+  # Roles    
+  Ec2SsmRole:
+    Type: AWS::IAM::Role
+    Properties: 
+      RoleName: Ec2SsmRole
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement: 
+          - Effect: Allow
+            Principal: 
+              Service: 
+                - ec2.amazonaws.com
+            Action: 
+              - sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonEC2RoleforSSM
+        - arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess
+  InstanceProfile: 
+    Type: AWS::IAM::InstanceProfile
+    Properties:       
+      Roles: 
+        - !Ref Ec2SsmRole
+  S3BucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties: 
+      Bucket: 
+        !Ref BucketName
+      PolicyDocument: 
+        Version: 2012-10-17
+        Statement: 
+          - 
+            Sid: LoggingBucketPolicy
+            Effect: Allow
+            Principal:
+            # Load balancer AWS account # - check https://docs.aws.amazon.com/elasticloadbalancing/latest/application/load-balancer-access-logs.html 
+              AWS: 
+                - "127311923021"
+            Action: 
+              - s3:PutObject
+            Resource:
+              !Sub 
+                - "arn:aws:s3:::${BucketName}/${prefix}/*"
+                - { BucketName: !Ref BucketName, prefix: lb-accesslogs }
+Outputs:
+  InstanceProfile:
+    Value: !Ref InstanceProfile
+    Export:
+      Name: !Sub "${AWS::StackName}-instance-profile"
+  DataSecurityGroup:
+    Value: !Ref DataSecurityGroup
+    Export:
+      Name: !Sub "${AWS::StackName}-data-sg"
+  AppSecurityGroup:
+    Value: !Ref AppSecurityGroup
+    Export:
+      Name: !Sub "${AWS::StackName}-app-sg"
+  EfsSecurityGroup:
+    Value: !Ref EfsSecurityGroup
+    Export:
+      Name: !Sub "${AWS::StackName}-efs-sg"
+  SshSecurityGroup:
+    Value: !Ref SshSecurityGroup
+    Export:
+      Name: !Sub "${AWS::StackName}-ssh-sg"
+  PublicSecurityGroup:
+    Value: !Ref PublicSecurityGroup
+    Export:
+      Name: !Sub "${AWS::StackName}-public-sg"

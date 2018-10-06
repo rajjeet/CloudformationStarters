@@ -1,0 +1,59 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Bastion Host Server(s)
+Parameters:
+  KeyPair:
+    Type: String
+  ImageAmi:
+    Type: String      
+  SshSecurityGroup:
+    Type: String
+  EfsSecurityGroup:
+    Type: String
+  SubnetAz1:
+    Type: String
+  InstanceProfile:
+    Type: String
+  Efs:
+    Type: String
+Resources:  
+  BastionHost:
+    Type: AWS::EC2::Instance
+    Metadata:
+      AWS::CloudFormation::Init: 
+        configSets:
+          default: 
+            - mountEfs
+        mountEfs:        
+          packages:
+            yum:
+              amazon-efs-utils: []
+          commands:
+            1_setupWww:
+              command: mkdir -p /var/www/html
+            2_mountEfs:
+              command: 
+                !Sub
+                  - mount -t efs ${efsId}:/ /var/www/html
+                  - { efsId: !Ref Efs }
+    Properties:
+      ImageId: !Ref ImageAmi
+      InstanceType: t2.micro
+      KeyName: !Ref KeyPair
+      SecurityGroupIds:
+        - !Ref SshSecurityGroup
+        - !Ref EfsSecurityGroup
+      SubnetId: !Ref SubnetAz1
+      IamInstanceProfile: !Ref InstanceProfile
+      UserData: 
+        Fn::Base64:
+          !Sub |
+            #!/bin/bash -xe
+            yum update -y 
+            yum install -y aws-cfn-bootstrap
+            /opt/aws/bin/cfn-init -v -s ${AWS::StackName} -r BastionHost --region ${AWS::Region}
+            /opt/aws/bin/cfn-signal -e $? -s ${AWS::StackName} -r BastionHost --region ${AWS::Region}  
+Outputs:
+  BastionHostPublicIp:
+    Value: !GetAtt BastionHost.PublicIp
+
+
