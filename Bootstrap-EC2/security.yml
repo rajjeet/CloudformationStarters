@@ -1,0 +1,105 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Security
+Parameters:
+  Vpc:
+    Type: String
+  VpcPrefix:
+    Type: String
+  BucketName:
+    Type: String
+Resources:  
+  # Security Groups
+  SshSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:       
+      GroupDescription: Security group for SSH/RDP access
+      VpcId: !Ref Vpc
+      SecurityGroupIngress:
+        - CidrIp: "{{resolve:ssm:MyHomeIpAddressCidr:1}}"
+          FromPort: 22
+          ToPort: 22
+          IpProtocol: tcp        
+        - CidrIp: "{{resolve:ssm:MyMobileIpAddressCidr:4}}"
+          FromPort: 22
+          ToPort: 22
+          IpProtocol: tcp
+        - CidrIp: "{{resolve:ssm:MyHomeIpAddressCidr:1}}"
+          FromPort: 3389
+          ToPort: 3389
+          IpProtocol: tcp
+        - CidrIp: "{{resolve:ssm:MyMobileIpAddressCidr:4}}"
+          FromPort: 3389
+          ToPort: 3389
+          IpProtocol: tcp
+      Tags:
+        - Key: Name
+          Value: Ssh-SG
+  PublicSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:       
+      GroupDescription: Security group for internet-facing components
+      VpcId: !Ref Vpc
+      SecurityGroupIngress:
+        - CidrIp: 0.0.0.0/0
+          FromPort: 80
+          ToPort: 80
+          IpProtocol: tcp        
+        - CidrIp: 0.0.0.0/0
+          FromPort: 443
+          ToPort: 443
+          IpProtocol: tcp            
+      Tags:
+        - Key: Name
+          Value: Public-SG
+  # Roles    
+  CloudwatchAgentServerRole:
+    Type: AWS::IAM::Role
+    Properties: 
+      RoleName: CloudwatchAgentServerRole
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement: 
+          - Effect: Allow
+            Principal: 
+              Service: 
+                - ec2.amazonaws.com
+            Action: 
+              - sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonEC2RoleforSSM
+        - arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy
+  CloudwatchAgentAdminRole:
+    Type: AWS::IAM::Role
+    Properties: 
+      RoleName: CloudwatchAgentAdminRole
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement: 
+          - Effect: Allow
+            Principal: 
+              Service: 
+                - ec2.amazonaws.com
+            Action: 
+              - sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonEC2RoleforSSM
+        - arn:aws:iam::aws:policy/CloudWatchAgentAdminPolicy
+  CloudwatchAgentServerInstanceRole: 
+    Type: AWS::IAM::InstanceProfile
+    Properties:       
+      Roles: 
+        - !Ref CloudwatchAgentServerRole  
+  CloudwatchAgentAdminInstanceRole: 
+    Type: AWS::IAM::InstanceProfile
+    Properties:       
+      Roles: 
+        - !Ref CloudwatchAgentAdminRole  
+Outputs:
+  CloudwatchAgentServerInstanceRole:
+    Value: !Ref CloudwatchAgentServerInstanceRole
+  CloudwatchAgentAdminInstanceRole:
+    Value: !Ref CloudwatchAgentAdminInstanceRole
+  PublicSecurityGroup:
+    Value: !Ref PublicSecurityGroup
+  SshSecurityGroup:
+    Value: !Ref SshSecurityGroup

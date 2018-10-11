@@ -1,0 +1,27 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Parameter
+Parameters:
+  CWAgentConfigUbuntuContents:
+    Type: String
+  CWAgentConfigWindowsContents:
+    Type: String
+Resources:
+  CWAgentConfigUbuntuParam:  
+    Type: "AWS::SSM::Parameter"
+    Properties: 
+      Description: Cloudwatch Agent configuration file content for Ubuntu
+      Name: AmazonCloudWatch-AgentConfigUbuntu
+      Type: String
+      Value: !Ref CWAgentConfigUbuntuContents
+  CWAgentConfigWindowsParam:  
+    Type: "AWS::SSM::Parameter"
+    Properties: 
+      Description: Cloudwatch Agent configuration file content for Windows
+      Name: AmazonCloudWatch-AgentConfigWindows
+      Type: String
+      Value: !Ref CWAgentConfigWindowsContents
+Outputs:
+  CWAgentConfigUbuntuParam:
+    Value: !Ref CWAgentConfigUbuntuParam
+  CWAgentConfigWindowsParam:
+    Value: !Ref CWAgentConfigWindowsParam

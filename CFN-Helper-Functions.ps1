@@ -1,19 +1,22 @@
-function Install-CFNStack ($stackName, $templateBody, $parameterList, $region, $timeout = 600, [switch] $skipWait) {
+function Install-CFNStack ($stackName, $templateBody, $parameterList, $region, $timeout = 600, [switch] $skipWait, [switch] $capabilityIAM) {
   $ErrorActionPreference = "Stop"  
   Import-Module AWSPowershell
   Set-DefaultAWSRegion -Region $region
   try {    
-    return Update-MyCFNStack -stackName $stackName -templateBody $templateBody -parameterList $parameterList -timeout $timeout -skipWait:$skipWait
+    return Update-MyCFNStack -stackName $stackName -templateBody $templateBody `
+      -parameterList $parameterList -timeout $timeout -skipWait:$skipWait -capabilityIAM:$capabilityIAM
   } catch [InvalidOperationException] {
     if( $PSItem.Exception.Message -eq "Stack [$stackName] does not exist") {
-      return New-MyCFNStack -stackName $stackName -templateBody $templateBody -parameterList $parameterList -timeout $timeout -skipWait:$skipWait
+      return New-MyCFNStack -stackName $stackName -templateBody $templateBody `
+      -parameterList $parameterList -timeout $timeout -skipWait:$skipWait -capabilityIAM:$capabilityIAM
     } elseif ($PSItem.Exception.Message -eq "No updates are to be performed.") {
       Write-Host "No updates are to be performed on Stack [$stackName]"
       return (Get-CFNStack -StackName $stackName).Outputs
     } elseif ($PSItem.Exception.Message -match "Stack:arn:aws:cloudformation:${region}.*stack/${stackName}/.* is in ROLLBACK_COMPLETE state and can not be updated.") {
         Write-Host "Stack [${stackName}] is in ROLLBACK_COMPLETE state and needs to be recreated..."
         Uninstall-CFNStack -StackName $stackName | Out-Null
-        return New-MyCFNStack -stackName $stackName -templateBody $templateBody -parameterList $parameterList -timeout $timeout -skipWait:$skipWait
+        return New-MyCFNStack -stackName $stackName -templateBody $templateBody `
+          -parameterList $parameterList -timeout $timeout -skipWait:$skipWait -capabilityIAM:$capabilityIAM
     }
      else {
       Throw "[$stackName] $PSItem.Exception"
@@ -21,8 +24,12 @@ function Install-CFNStack ($stackName, $templateBody, $parameterList, $region, $
   }  
 }
 
-function Update-MyCFNStack ($stackName, $templateBody, $parameterList, $timeout, [switch] $skipWait) {
-  Update-CFNStack -Stackname $stackName -TemplateBody $templateBody -Parameter $parameterList -Capability CAPABILITY_NAMED_IAM
+function Update-MyCFNStack ($stackName, $templateBody, $parameterList, $timeout, [switch] $skipWait, [switch] $capabilityIAM) {
+  if ($capabilityIAM) {
+    Update-CFNStack -Stackname $stackName -TemplateBody $templateBody -Parameter $parameterList -Capability CAPABILITY_NAMED_IAM
+  } else {
+    Update-CFNStack -Stackname $stackName -TemplateBody $templateBody -Parameter $parameterList
+  }  
   Write-Host "Updating stack [${stackName}]..."
   if (-Not ($skipWait)) {
     Wait-CFNStack -StackName $stackName -Timeout $timeout -Status UPDATE_COMPLETE,UPDATE_ROLLBACK_COMPLETE
@@ -32,8 +39,12 @@ function Update-MyCFNStack ($stackName, $templateBody, $parameterList, $timeout,
   return (Get-CFNStack -StackName $stackName).Outputs
 }
 
-function New-MyCFNStack ($stackName, $templateBody, $parameterList, $timeout, [switch] $skipWait){
-  New-CFNStack -Stackname $stackName -TemplateBody $templateBody -Parameter $parameterList -Capability CAPABILITY_NAMED_IAM
+function New-MyCFNStack ($stackName, $templateBody, $parameterList, $timeout, [switch] $skipWait, [switch] $capabilityIAM){
+  if ($capabilityIAM){
+    New-CFNStack -Stackname $stackName -TemplateBody $templateBody -Parameter $parameterList -Capability CAPABILITY_NAMED_IAM
+  } else {
+    New-CFNStack -Stackname $stackName -TemplateBody $templateBody -Parameter $parameterList
+  }  
   Write-Host "Creating stack [${stackName}]..."
   if (-Not ($skipWait)) {
     Wait-CFNStack -StackName $stackName -Timeout $timeout -Status CREATE_COMPLETE,ROLLBACK_COMPLETE

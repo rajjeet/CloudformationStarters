@@ -1,0 +1,272 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Server
+Parameters:
+  KeyPair:
+    Type: String
+  AmazonAmi:
+    Type: 'AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>'
+    Default: /aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2  
+  SecurityGroup1:
+    Type: String
+  Subnet1:
+    Type: String
+  InstanceProfile:
+    Type: String    
+  CwAgentConfigUbuntuParam:
+    Type: String
+  CwAgentConfigWindowsParam:
+    Type: String
+Resources:  
+  # Ubuntu
+  UbuntuInstance:
+    Type: AWS::EC2::Instance
+    CreationPolicy:
+      ResourceSignal:
+        Timeout: PT5M
+    Properties:      
+      ImageId: "{{resolve:ssm:AmiImageId-UbuntuBionic:1}}"
+      InstanceType: t2.micro
+      KeyName: !Ref KeyPair
+      SecurityGroupIds:
+        - !Ref SecurityGroup1
+      SubnetId: !Ref Subnet1
+      IamInstanceProfile: !Ref InstanceProfile
+      Tags: 
+        - Key: Name
+          Value: BootstrapUbuntu        
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash        
+          apt-get update
+          apt-get -y install python-pip
+          pip install https://s3.amazonaws.com/cloudformation-examples/aws-cfn-bootstrap-latest.tar.gz
+          ln -n /usr/local/init/ubuntu/cfn-hup /etc/init.d/cfn-hup
+          update-rc.d cfn-hup defaults
+          cfn-init -v -s ${AWS::StackName} -r UbuntuInstance -c install
+          cfn-signal -e $? --stack=${AWS::StackName} --resource=UbuntuInstance 
+    Metadata:
+      AWS::CloudFormation::Init: 
+        configSets:
+          configure:
+            - echotest
+          install:
+            - setup
+        echotest:
+          commands:
+            1_simple:
+              command: echo "this is cfn-hup speaking2222" >> test.txt
+              cwd: /home/ubuntu
+        setup:
+          files:
+            /etc/cfn/cfn-hup.conf:
+              content: !Sub |
+                [main]
+                stack=${AWS::StackId}
+                region=${AWS::Region}
+                interval=1
+                verbose=true
+              mode: 000400
+              group: root
+              owner: root
+            /etc/cfn/hooks.d/cfn-auto-reloader.conf:
+              content: !Sub |
+                [cfn-auto-reloader-hook]
+                triggers=post.update
+                path=Resources.UbuntuInstance.Metadata.AWS::CloudFormation::Init
+                action=cfn-init -v -s ${AWS::StackName} -r UbuntuInstance -c configure
+              mode: 000400
+              group: root
+              owner: root
+            /lib/systemd/system/cfn-hup.service: 
+              content: !Sub |
+                [Unit]
+                Description=cfn-hup daemon
+
+                [Service]
+                Type=simple
+                ExecStart=/usr/local/bin/cfn-hup
+                Restart=always
+
+                [Install]
+                WantedBy=multi-user.target
+          commands:
+            1_download_CWAgent:
+              command: wget https://s3.amazonaws.com/amazoncloudwatch-agent/ubuntu/amd64/latest/amazon-cloudwatch-agent.deb
+            2_dpkg_install:
+              command: dpkg -i amazon-cloudwatch-agent.deb 
+            3_update_dependencies:
+              command: apt-get install -f
+            4_start_CWagent:
+              command: !Sub
+                - /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl -a fetch-config -m ec2 -c ssm:${configurationParameterStoreName} -s
+                - { configurationParameterStoreName: !Ref  CwAgentConfigUbuntuParam }
+          services:
+            sysvinit:
+              cfn-hup:
+                enabled: true
+                ensureRunning: true
+                files: 
+                  - /etc/cfn/cfn-hup.conf
+                  - /etc/cfn/hooks.d/cfn-auto-reloader.conf
+  # Amazon Linux
+  AmazonInstance:
+    Type: AWS::EC2::Instance
+    CreationPolicy:
+      ResourceSignal:
+        Timeout: PT5M
+    Properties:      
+      ImageId: !Ref AmazonAmi
+      InstanceType: t2.micro
+      KeyName: !Ref KeyPair
+      SecurityGroupIds:
+        - !Ref SecurityGroup1
+      SubnetId: !Ref Subnet1
+      IamInstanceProfile: !Ref InstanceProfile
+      Tags:
+        - Key: Name
+          Value: BootstrapAmazon        
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash        
+          yum update -y
+          yum install -y aws-cfn-bootstrap
+          /opt/aws/apitools/cfn-init/bin/cfn-init -v -s ${AWS::StackName} -r AmazonInstance -c install          
+          /opt/aws/apitools/cfn-init/bin/cfn-signal -e $? --stack=${AWS::StackName} --resource=AmazonInstance
+    Metadata:
+      AWS::CloudFormation::Init: 
+        configSets:
+          configure:
+            - echotest
+          install:
+            - setup
+        echotest:
+          commands:
+            1_simple:
+              command: echo "this is cfn-hup speaking" >> test.txt
+              cwd: /home/ec2-user
+        setup:
+          files:
+            /etc/cfn/cfn-hup.conf:
+              content: !Sub |
+                [main]
+                stack=${AWS::StackId}
+                region=${AWS::Region}
+                interval=1
+                verbose=true
+              mode: 000400
+              group: root
+              owner: root
+            /etc/cfn/hooks.d/cfn-auto-reloader.conf:
+              content: !Sub |
+                [cfn-auto-reloader-hook]
+                triggers=post.update
+                path=Resources.AmazonInstance.Metadata.AWS::CloudFormation::Init
+                action=/opt/aws/bin/cfn-init -v -s ${AWS::StackName} -r AmazonInstance -c configure
+              mode: 000400
+              group: root
+              owner: root
+          commands:
+              1_download_CWAgent:
+                command: wget https://s3.amazonaws.com/amazoncloudwatch-agent/amazon_linux/amd64/latest/amazon-cloudwatch-agent.rpm
+              2_install:
+                command: rpm -U ./amazon-cloudwatch-agent.rpm              
+              3_configure_agent:
+                command: !Sub
+                  -  /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl -a fetch-config -m ec2 ssm:${configurationParameterStoreName} -s
+                  - { configurationParameterStoreName: !Ref  CwAgentConfigUbuntuParam }
+          services:
+            sysvinit:
+              cfn-hup:
+                enabled: true
+                ensureRunning: true
+                files: 
+                  - /etc/cfn/cfn-hup.conf
+                  - /etc/cfn/hooks.d/cfn-auto-reloader.conf
+  # Windows 
+  WindowsInstance:
+    Type: AWS::EC2::Instance
+    CreationPolicy:
+      ResourceSignal:
+        Timeout: PT20M
+    Properties:      
+      ImageId: "{{resolve:ssm:AmiImageId-Windows2016Base:1}}"
+      InstanceType: t2.micro
+      KeyName: !Ref KeyPair
+      SecurityGroupIds:
+        - !Ref SecurityGroup1
+      SubnetId: !Ref Subnet1
+      IamInstanceProfile: !Ref InstanceProfile
+      Tags:
+        - Key: Name
+          Value: BoostrapWindows
+      UserData:
+        Fn::Base64: !Sub |
+          <script>          
+            cfn-init.exe -v -s ${AWS::StackName} -r WindowsInstance --region ${AWS::Region} -c install
+            cfn-signal.exe -e %ERRORLEVEL% --stack=${AWS::StackName} --resource=WindowsInstance
+          </script>
+    Metadata:
+      AWS::CloudFormation::Init:         
+        configSets:
+          install:
+            - setup
+          configure:
+            - echoTest
+        echoTest:
+          commands:
+            1_test:
+              command: echo %date% %time% >> test.txt
+              cwd: C:\
+              test: powershell -command Test-Path C:\
+        setup:
+          files:
+            C:\cfn\cfn-hup.conf:
+              content:
+                !Sub | 
+                  [main]
+                  stack=${AWS::StackId}
+                  region=${AWS::Region}
+                  interval=1
+                  verbose=true
+            C:\cfn\hooks.d\cfn-auto-reloader.conf:
+              content:
+                !Sub |
+                  [cfn-auto-reloader-hook]
+                  triggers=post.update
+                  path=Resources.WindowsInstance.Metadata.AWS::CloudFormation::Init
+                  action=cfn-init.exe -v -s ${AWS::StackName} -r WindowsInstance --region ${AWS::Region} -c configure
+            C:\Users\Administrator\AmazonCloudWatchAgent\AmazonCloudWatchAgent.zip:
+              source: https://s3.amazonaws.com/amazoncloudwatch-agent/windows/amd64/latest/AmazonCloudWatchAgent.zip
+          commands:
+            1_unzip:
+              command: powershell -command Expand-Archive AmazonCloudWatchAgent.zip .
+              cwd: C:\Users\Administrator\AmazonCloudWatchAgent
+            # 2_start:
+            #   command: !Sub 
+            #     - powershell -command .\amazon-cloudwatch-agent-ctl.ps1 -a fetch-config -m ec2 -c ssm:${configurationParameterStoreName} -s
+            #     - { configurationParameterStoreName: !Ref CwAgentConfigWindowsParam }
+            #   cwd: C:\Users\Administrator\AmazonCloudWatchAgent
+          services:
+            windows:
+              cfn-hup:
+                enabled: true
+                ensureRunning: true
+                files:
+                  - C:\cfn\cfn-hup.conf
+                  - C:\cfn\hooks.d\cfn-auto-reloader.conf
+Outputs:
+  UbuntuInstanceId:
+    Value: !Ref UbuntuInstance
+  UbuntuInstance:
+    Value: !GetAtt UbuntuInstance.PublicIp
+  AmazonInstanceId:
+    Value: !Ref AmazonInstance
+  AmazonInstance:
+    Value: !GetAtt AmazonInstance.PublicIp
+  WindowsInstanceId:
+    Value: !Ref WindowsInstance
+  WindowsInstance:
+    Value: !GetAtt WindowsInstance.PublicIp 
+
+  
+  

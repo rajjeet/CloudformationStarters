@@ -1,0 +1,70 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Network
+Parameters:
+  VpcPrefix:
+    Type: String
+    Description: VPC prefix 
+Resources:
+  Vpc:
+    Type: AWS::EC2::VPC
+    Properties: 
+      CidrBlock: !Join [ ".", [ !Ref VpcPrefix , "0.0/16" ] ]
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+  # Internet Gateway
+  InternetGatway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: InternetGateway
+  IGWGatewayAttachment:    
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      InternetGatewayId: !Ref InternetGatway
+      VpcId: !Ref Vpc
+  # Public Subnet 
+  PublicSubnetAz1:
+    Type: AWS::EC2::Subnet
+    Properties:        
+      AvailabilityZone: !Select 
+        - 0
+        - Fn::GetAZs: !Ref AWS::Region
+      CidrBlock: !Join [ ".", [ !Ref VpcPrefix , "0.0/24" ] ]
+      MapPublicIpOnLaunch: true      
+      VpcId: !Ref Vpc
+      Tags:
+        - Key: Name
+          Value: PublicAz1
+  # Public Routing
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties: 
+      VpcId: !Ref Vpc
+      Tags:
+        - Key: Name
+          Value: Public
+  PublicRoute:      
+    Type: AWS::EC2::Route
+    Properties:       
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGatway
+      RouteTableId: !Ref PublicRouteTable
+  PublicSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties: 
+      RouteTableId: !Ref PublicRouteTable
+      SubnetId: !Ref PublicSubnetAz1
+Outputs:
+  Vpc:
+    Value: !Ref Vpc
+    Export:
+      Name: !Sub "${AWS::StackName}-vpc"
+  VpcPrefix:
+    Value: !Ref VpcPrefix
+    Export:
+      Name: !Sub "${AWS::StackName}-vpc-prefix"
+  PublicSubnetAz1:
+    Value: !Ref PublicSubnetAz1
+    Export:
+      Name: !Sub "${AWS::StackName}-public-subnet-az1"
