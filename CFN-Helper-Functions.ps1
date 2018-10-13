@@ -91,8 +91,9 @@ function Invoke-EC2KeyPairCreation ($KeyPairName, $BucketName) {
     Get-EC2KeyPair -KeyName $keyPairName | Out-Null
   } catch [InvalidOperationException] {
     if ($PSItem.Exception.Message -eq "The key pair '${keyPairName}' does not exist"){
-      $keyPair = New-EC2KeyPair -KeyName $keyPairName
+      $keyPair = New-EC2KeyPair -KeyName $keyPairName -Force
       $keyPair.KeyMaterial | Set-Content -Path ".\${keyPairName}.pem" -Force
+      Start-Sleep -Seconds 2
       Write-S3Object -BucketName $keyPairBucketName -Key $keyPairName -File ".\${keyPairName}.pem" | Out-Null
       Write-Host "Keypair ${keyPairName} created." -ForegroundColor Green
     }

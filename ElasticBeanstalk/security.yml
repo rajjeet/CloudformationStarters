@@ -1,0 +1,119 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Security
+Parameters:
+  Vpc:
+    Type: String  
+Resources:  
+  SshSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:       
+      GroupDescription: Security group for SSH/RDP access
+      VpcId: !Ref Vpc
+      SecurityGroupIngress:
+        - CidrIp: "{{resolve:ssm:MyHomeIpAddressCidr:1}}"
+          FromPort: 22
+          ToPort: 22
+          IpProtocol: tcp        
+        - CidrIp: "{{resolve:ssm:MyMobileIpAddressCidr:1}}"
+          FromPort: 22
+          ToPort: 22
+          IpProtocol: tcp                
+      Tags:
+        - Key: Name
+          Value: Ssh-SG
+  PublicSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:       
+      GroupDescription: Security group for internet-facing components
+      VpcId: !Ref Vpc
+      SecurityGroupIngress:
+        - CidrIp: 0.0.0.0/0
+          FromPort: 80
+          ToPort: 80
+          IpProtocol: tcp        
+        - CidrIp: 0.0.0.0/0
+          FromPort: 443
+          ToPort: 443
+          IpProtocol: tcp        
+        - SourceSecurityGroupId: !Ref SshSecurityGroup
+          FromPort: 22
+          ToPort: 22
+          IpProtocol: tcp      
+      Tags:
+        - Key: Name
+          Value: Public-SG
+  AppSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:       
+      GroupDescription: Security group for components receiving HTTP/HTTPS traffic from public components
+      VpcId: !Ref Vpc
+      SecurityGroupIngress:
+        - SourceSecurityGroupId: !Ref PublicSecurityGroup
+          FromPort: 80
+          ToPort: 80
+          IpProtocol: tcp        
+        - SourceSecurityGroupId: !Ref PublicSecurityGroup
+          FromPort: 443
+          ToPort: 443
+          IpProtocol: tcp
+        - SourceSecurityGroupId: !Ref SshSecurityGroup
+          FromPort: 22
+          ToPort: 22
+          IpProtocol: tcp      
+      Tags:
+        - Key: Name
+          Value: App-SG
+  DataSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:       
+      GroupDescription: Security group for databases
+      VpcId: !Ref Vpc
+      SecurityGroupIngress:
+        - SourceSecurityGroupId: !Ref AppSecurityGroup
+          FromPort: 3306
+          ToPort: 3306
+          IpProtocol: tcp        
+        - SourceSecurityGroupId: !Ref PublicSecurityGroup
+          FromPort: 3306
+          ToPort: 3306
+          IpProtocol: tcp        
+        - SourceSecurityGroupId: !Ref SshSecurityGroup
+          FromPort: 22
+          ToPort: 22
+          IpProtocol: tcp
+      Tags:
+        - Key: Name
+          Value: Data-SG
+  IamInstanceRole:
+    Type: AWS::IAM::Role
+    Properties: 
+      RoleName: IamInstanceRole
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement: 
+          - Effect: Allow
+            Principal: 
+              Service: 
+                - ec2.amazonaws.com
+            Action: 
+              - sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonEC2RoleforSSM
+        - arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy
+        - arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess
+  IamInstanceProfile: 
+    Type: AWS::IAM::InstanceProfile
+    Properties:       
+      Roles: 
+        - !Ref IamInstanceRole 
+Outputs:
+  SshSecurityGroup:
+    Value: !Ref SshSecurityGroup
+  PublicSecurityGroup:
+    Value: !Ref PublicSecurityGroup
+  AppSecurityGroup:
+    Value: !Ref AppSecurityGroup
+  DataSecurityGroup:
+    Value: !Ref DataSecurityGroup
+  IamInstanceProfile:
+    Value: !Ref IamInstanceProfile

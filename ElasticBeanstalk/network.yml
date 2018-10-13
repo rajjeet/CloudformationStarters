@@ -1,0 +1,234 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Network
+Parameters:
+  VpcPrefix:
+    Type: String
+    Description: VPC prefix 
+Resources:
+  Vpc:
+    Type: AWS::EC2::VPC
+    Properties: 
+      CidrBlock: !Join [ ".", [ !Ref VpcPrefix , "0.0/16" ] ]
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+  # Internet Gateway
+  InternetGatway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: InternetGateway
+  IGWGatewayAttachment:    
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      InternetGatewayId: !Ref InternetGatway
+      VpcId: !Ref Vpc
+  # 2 AZs, 3 Subnets each (1 Public, 1 App, 1 Data)
+  # Public Subnet 1
+  PublicSubnetAz1:
+    Type: AWS::EC2::Subnet
+    Properties:        
+      AvailabilityZone: !Select 
+        - 0
+        - Fn::GetAZs: !Ref AWS::Region
+      CidrBlock: !Join [ ".", [ !Ref VpcPrefix , "0.0/24" ] ]
+      MapPublicIpOnLaunch: true      
+      VpcId: !Ref Vpc
+      Tags:
+        - Key: Name
+          Value: PublicAz1
+  # Public Subnet 2
+  PublicSubnetAz2:
+    Type: AWS::EC2::Subnet
+    Properties:        
+      AvailabilityZone: !Select 
+        - 1
+        - Fn::GetAZs: !Ref AWS::Region
+      CidrBlock: !Join [ ".", [ !Ref VpcPrefix , "1.0/24" ] ]
+      MapPublicIpOnLaunch: true      
+      VpcId: !Ref Vpc    
+      Tags:
+        - Key: Name
+          Value: PublicAz2
+  # Public Routing
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties: 
+      VpcId: !Ref Vpc
+      Tags:
+        - Key: Name
+          Value: Public
+  PublicRoute:      
+    Type: AWS::EC2::Route
+    Properties:       
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGatway
+      RouteTableId: !Ref PublicRouteTable
+  PublicSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties: 
+      RouteTableId: !Ref PublicRouteTable
+      SubnetId: !Ref PublicSubnetAz1
+  PublicSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties: 
+      RouteTableId: !Ref PublicRouteTable
+      SubnetId: !Ref PublicSubnetAz2
+  # App Subnet 1
+  AppSubnetAz1:
+    Type: AWS::EC2::Subnet
+    Properties:        
+      AvailabilityZone: !Select 
+        - 0
+        - Fn::GetAZs: !Ref AWS::Region
+      CidrBlock: !Join [ ".", [ !Ref VpcPrefix , "2.0/24" ] ]
+      MapPublicIpOnLaunch: false
+      VpcId: !Ref Vpc
+      Tags:
+        - Key: Name
+          Value: AppAz1
+  # App Subnet 2
+  AppSubnetAz2:
+    Type: AWS::EC2::Subnet
+    Properties:        
+      AvailabilityZone: !Select 
+        - 1
+        - Fn::GetAZs: !Ref AWS::Region
+      CidrBlock: !Join [ ".", [ !Ref VpcPrefix , "3.0/24" ] ]
+      MapPublicIpOnLaunch: false
+      VpcId: !Ref Vpc
+      Tags:
+        - Key: Name
+          Value: AppAz2
+  # App Routing
+  AppAz1RouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties: 
+      VpcId: !Ref Vpc  
+      Tags:
+        - Key: Name
+          Value: AppAz1
+  AppAz2RouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties: 
+      VpcId: !Ref Vpc
+      Tags:
+        - Key: Name
+          Value: AppAz2  
+  AppSubnetAz1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties: 
+      RouteTableId: !Ref AppAz1RouteTable
+      SubnetId: !Ref AppSubnetAz1
+  AppSubnetAz2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties: 
+      RouteTableId: !Ref AppAz2RouteTable
+      SubnetId: !Ref AppSubnetAz2
+  # Data Subnet 1
+  DataSubnetAz1:
+    Type: AWS::EC2::Subnet
+    Properties:        
+      AvailabilityZone: !Select 
+        - 0
+        - Fn::GetAZs: !Ref AWS::Region
+      CidrBlock: !Join [ ".", [ !Ref VpcPrefix , "4.0/24" ] ]
+      MapPublicIpOnLaunch: false
+      VpcId: !Ref Vpc
+  DataSubnetAz2:
+    Type: AWS::EC2::Subnet
+    Properties:        
+      AvailabilityZone: !Select 
+        - 1
+        - Fn::GetAZs: !Ref AWS::Region
+      CidrBlock: !Join [ ".", [ !Ref VpcPrefix , "5.0/24" ] ]
+      MapPublicIpOnLaunch: false 
+      VpcId: !Ref Vpc
+  # Data Routing
+  DataAz1RouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties: 
+      VpcId: !Ref Vpc
+      Tags:
+        - Key: Name
+          Value: DataAz1
+  DataAz2RouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties: 
+      VpcId: !Ref Vpc
+      Tags:
+        - Key: Name
+          Value: DataAz2
+  DataSubnetAz1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties: 
+      RouteTableId: !Ref DataAz1RouteTable
+      SubnetId: !Ref DataSubnetAz1  
+  DataSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties: 
+      RouteTableId: !Ref DataAz2RouteTable
+      SubnetId: !Ref DataSubnetAz2          
+  
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties: 
+      RouteTableId: !Ref PublicRouteTable
+      SubnetId: !Ref PublicSubnetAz1
+ # Elastic IP
+  Eip1:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: !Ref Vpc
+  # Nat Gateway
+  NatGatewayAz1:
+    Type: AWS::EC2::NatGateway
+    Properties: 
+      AllocationId: !GetAtt Eip1.AllocationId
+      SubnetId: !Ref PublicSubnetAz1
+  # Nat Routes
+  NatRouteAppAz1:
+    Type: AWS::EC2::Route
+    Properties: 
+      DestinationCidrBlock: 0.0.0.0/0      
+      NatGatewayId: !Ref NatGatewayAz1
+      RouteTableId: !Ref AppAz1RouteTable  
+  NatRouteDataAz1:
+    Type: AWS::EC2::Route
+    Properties: 
+      DestinationCidrBlock: 0.0.0.0/0      
+      NatGatewayId: !Ref NatGatewayAz1
+      RouteTableId: !Ref DataAz1RouteTable  
+  NatRouteAppAz2:
+    Type: AWS::EC2::Route
+    Properties: 
+      DestinationCidrBlock: 0.0.0.0/0      
+      NatGatewayId: !Ref NatGatewayAz1
+      RouteTableId: !Ref AppAz2RouteTable
+  NatRouteDataAz2:
+    Type: AWS::EC2::Route
+    Properties: 
+      DestinationCidrBlock: 0.0.0.0/0      
+      NatGatewayId: !Ref NatGatewayAz1
+      RouteTableId: !Ref DataAz2RouteTable
+Outputs:
+  Vpc:
+    Value: !Ref Vpc
+    Export:
+      Name: !Sub "${AWS::StackName}-vpc"
+  VpcPrefix:
+    Value: !Ref VpcPrefix
+  PublicSubnets:
+    Value: !Join
+      - ','
+      - - !Ref PublicSubnetAz1
+        - !Ref PublicSubnetAz2
+  AppSubnets: 
+    Value: !Join
+      - ','
+      - - !Ref AppSubnetAz1
+        - !Ref AppSubnetAz2
+  DataSubnets: 
+    Value: !Join
+      - ','
+      - - !Ref DataSubnetAz1
+        - !Ref DataSubnetAz1

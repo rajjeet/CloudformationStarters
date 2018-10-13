@@ -1,0 +1,128 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Elastic Beanstalk
+Parameters:
+  ElasticBeanstalkAppServiceRole:
+    Type: String
+  Vpc:
+    Type: String
+  BucketName:
+    Type: String
+  AppSubnets:
+    Type: String
+  PublicSubnets:
+    Type: String
+  DataSubnets:
+    Type: String    
+  KeyPairName:
+    Type: String
+  IamInstanceProfile:
+    Type: String
+  AmazonAmi:
+    Type: 'AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>'
+    Default: /aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2
+  AppSecurityGroup:
+    Type: String
+  PublicSecurityGroup:
+    Type: String
+  SshSecurityGroup:
+    Type: String
+Resources:
+  sampleApplication:
+    Type: AWS::ElasticBeanstalk::Application
+    Properties:
+      Description: AWS Elastic Beanstalk Sample Application
+      # ResourceLifecycleConfig:
+      #   ServiceRole: aws-elasticbeanstalk-service-role
+      #   VersionLifecycleConfig:
+      #     MaxCountRule:
+      #       DeleteSourceFromS3: false
+      #       Enabled: true
+      #       MaxCount: 5
+  sampleApplicationVersion:
+    Type: AWS::ElasticBeanstalk::ApplicationVersion
+    Properties:
+      ApplicationName:
+        Ref: sampleApplication
+      Description: AWS ElasticBeanstalk Sample Application Version
+      SourceBundle:
+        S3Bucket: !Join
+          - ""
+          - - elasticbeanstalk-
+            - !Ref AWS::Region
+            - "-"
+            - !Ref AWS::AccountId            
+        S3Key: !Join 
+          - ""
+          - - SamplePHPApp
+            - /index_mod_v2.zip
+  sampleConfigurationTemplate:
+    Type: AWS::ElasticBeanstalk::ConfigurationTemplate
+    Properties:
+      ApplicationName:
+        Ref: sampleApplication
+      Description: AWS ElasticBeanstalk Sample Configuration Template
+      OptionSettings:
+      - Namespace: aws:autoscaling:asg
+        OptionName: MinSize
+        Value: '2'
+      - Namespace: aws:autoscaling:asg
+        OptionName: MaxSize
+        Value: '4'
+      - Namespace: aws:elasticbeanstalk:environment
+        OptionName: EnvironmentType
+        Value: LoadBalanced
+      - Namespace: aws:autoscaling:launchconfiguration
+        OptionName: EC2KeyName
+        Value: !Ref KeyPairName
+      - Namespace: aws:autoscaling:launchconfiguration
+        OptionName: IamInstanceProfile
+        Value: !Ref IamInstanceProfile
+      # - Namespace: aws:autoscaling:launchconfiguration
+      #   OptionName: ImageId
+      #   Value: !Ref AmazonAmi
+      - Namespace: aws:autoscaling:launchconfiguration
+        OptionName: SecurityGroups
+        Value: !Join
+          - ","
+          - - !Ref PublicSecurityGroup
+            - !Ref SshSecurityGroup
+      - Namespace: aws:autoscaling:launchconfiguration
+        OptionName: SSHSourceRestriction
+        Value: !Join
+          - ", "
+          - - "tcp"
+            - "22"
+            - "22"
+            - !Ref SshSecurityGroup
+      - Namespace: aws:elbv2:loadbalancer
+        OptionName: SecurityGroups
+        Value: !Ref PublicSecurityGroup
+      - Namespace: aws:ec2:vpc
+        OptionName: VPCId
+        Value: !Ref Vpc
+      - Namespace: aws:ec2:vpc
+        OptionName: AssociatePublicIpAddress
+        Value: true
+      - Namespace: aws:ec2:vpc
+        OptionName: Subnets
+        Value: !Ref AppSubnets
+      - Namespace: aws:ec2:vpc
+        OptionName: ELBSubnets
+        Value: !Ref PublicSubnets
+      - Namespace: aws:elasticbeanstalk:environment
+        OptionName: LoadBalancerType
+        Value: application
+      SolutionStackName: 64bit Amazon Linux running PHP 5.3
+  sampleEnvironment:
+    Type: AWS::ElasticBeanstalk::Environment
+    Properties:
+      ApplicationName:
+        Ref: sampleApplication
+      Description: AWS ElasticBeanstalk Sample Environment
+      TemplateName:
+        Ref: sampleConfigurationTemplate
+      VersionLabel:
+        Ref: sampleApplicationVersion
+Outputs:
+  EnvironmentEndpoint:
+    Value: !GetAtt sampleEnvironment.EndpointURL
