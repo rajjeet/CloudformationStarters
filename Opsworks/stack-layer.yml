@@ -1,0 +1,107 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Opsworks Stack and Layers
+Parameters:
+  IamInstanceProfileArn:
+    Type: String
+  DefaultSubnet:
+    Type: String
+  Vpc:
+    Type: String
+  KeyName:
+    Type: String
+  BucketName:
+    Type: String
+  Cookbook:
+    Type: String
+  AppSecurityGroup:
+    Type: String
+  PublicSecurityGroup:
+    Type: String
+  SshSecurityGroup:
+    Type: String
+  LoadBalancer:
+    Type: String
+Resources:
+  MyCookbooksDemoStack:
+    Type: AWS::OpsWorks::Stack
+    Properties:     
+      ConfigurationManager:
+        Name: Chef
+        Version: 12
+      CustomCookbooksSource:
+        Type: s3
+        Url: !Join 
+          - ""
+          - - https://s3.amazonaws.com/
+            - !Ref BucketName
+            - "/"
+            - !Ref Cookbook
+            - ".tar.gz"
+      DefaultInstanceProfileArn: !Ref IamInstanceProfileArn
+      DefaultOs: Ubuntu 16.04 LTS
+      DefaultSshKeyName: !Ref KeyName
+      DefaultSubnetId: !Ref DefaultSubnet      
+      Name: MyCookbooksDemoStack
+      ServiceRoleArn: arn:aws:iam::224947627700:role/aws-opsworks-service-role
+      UseCustomCookbooks: true
+      UseOpsworksSecurityGroups: false
+      VpcId: !Ref Vpc
+  WebAppLayer:
+    Type: "AWS::OpsWorks::Layer"
+    Properties:
+      AutoAssignElasticIps: false
+      AutoAssignPublicIps: false
+      CustomRecipes:
+        Setup:
+          - !Join 
+              - "::"
+              - - !Ref Cookbook 
+                - dependencies_demo
+      EnableAutoHealing: true
+      CustomSecurityGroupIds:
+        - !Ref AppSecurityGroup
+        - !Ref SshSecurityGroup
+      Name: MyCookbooksDemoLayer
+      Shortname: sample-app
+      StackId: !Ref MyCookbooksDemoStack
+      Type: custom
+  BastionHostLayer:
+    Type: "AWS::OpsWorks::Layer"
+    Properties:
+      AutoAssignElasticIps: false
+      AutoAssignPublicIps: true
+      EnableAutoHealing: true
+      CustomSecurityGroupIds:
+        - !Ref PublicSecurityGroup
+        - !Ref SshSecurityGroup
+      Name: BastionHosts
+      Shortname: bastion
+      StackId: !Ref MyCookbooksDemoStack
+      Type: custom
+  LoadbalancingLayer:
+    Type: "AWS::OpsWorks::Layer"
+    Properties:
+      AutoAssignElasticIps: false
+      AutoAssignPublicIps: false
+      CustomSecurityGroupIds:
+        - !Ref AppSecurityGroup
+        - !Ref SshSecurityGroup
+      EnableAutoHealing: true
+      Name: LoadBalancingLayer
+      Shortname: elb
+      StackId: !Ref MyCookbooksDemoStack
+      Type: custom
+  LoadBalancerAttachment:
+    Type: AWS::OpsWorks::ElasticLoadBalancerAttachment
+    Properties:
+      ElasticLoadBalancerName: !Ref LoadBalancer
+      LayerId: !Ref LoadbalancingLayer
+Outputs:
+  WebAppLayer:
+    Value: !Ref WebAppLayer
+  LoadbalancingLayer:
+    Value: !Ref LoadbalancingLayer
+  MyCookbooksDemoStack:
+    Value: !Ref MyCookbooksDemoStack
+  BastionHostLayer:
+    Value: !Ref BastionHostLayer

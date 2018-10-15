@@ -9,7 +9,7 @@ $keyPairName = "elastic-beanstalk-keypair"
 $s3BucketName = "elastic-beanstalk-phullr2"
 
 try {
-  $keypair = Get-EC2KeyPair -KeyName $keyPairName -Verbose
+  $keypair = Get-EC2KeyPair -KeyName $keyPairName 
   Remove-EC2KeyPair -KeyName $keyPair.KeyName -Force
 } catch {}
 

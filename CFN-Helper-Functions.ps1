@@ -94,7 +94,7 @@ function Invoke-EC2KeyPairCreation ($KeyPairName, $BucketName) {
       $keyPair = New-EC2KeyPair -KeyName $keyPairName -Force
       $keyPair.KeyMaterial | Set-Content -Path ".\${keyPairName}.pem" -Force
       Start-Sleep -Seconds 2
-      Write-S3Object -BucketName $keyPairBucketName -Key $keyPairName -File ".\${keyPairName}.pem" | Out-Null
+      Write-S3Object -BucketName $BucketName -Key $keyPairName -File ".\${keyPairName}.pem" | Out-Null
       Write-Host "Keypair ${keyPairName} created." -ForegroundColor Green
     }
   }

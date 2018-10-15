@@ -1,0 +1,46 @@
+Parameters:
+  StackId:
+    Type: String
+  WebAppLayer:
+    Type: String
+  BastionHostLayer:
+    Type: String
+  AppSubnetAz1:
+    Type: String
+  AppSubnetAz2:
+    Type: String
+  PublicSubnetAz1:
+    Type: String
+  LoadbalancingLayer:
+    Type: String
+Resources:
+  DemoInstance1:
+    Type: "AWS::OpsWorks::Instance"
+    Properties:
+      InstanceType: t2.micro
+      LayerIds: 
+      - !Ref WebAppLayer
+      - !Ref LoadbalancingLayer
+      RootDeviceType: ebs
+      StackId: !Ref StackId
+      SubnetId: !Ref AppSubnetAz1
+  DemoInstance2:
+    # DependsOn: DemoInstance1
+    Type: "AWS::OpsWorks::Instance"
+    Properties:
+      InstanceType: t2.micro
+      LayerIds: 
+      - !Ref WebAppLayer
+      - !Ref LoadbalancingLayer
+      RootDeviceType: ebs
+      StackId: !Ref StackId
+      SubnetId: !Ref AppSubnetAz2
+  # BastionInstance1:
+  #   Type: "AWS::OpsWorks::Instance"
+  #   Properties:
+  #     InstanceType: t2.micro
+  #     LayerIds: 
+  #     - !Ref BastionHostLayer
+  #     RootDeviceType: ebs
+  #     StackId: !Ref StackId
+  #     SubnetId: !Ref PublicSubnetAz1

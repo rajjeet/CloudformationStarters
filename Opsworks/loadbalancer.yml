@@ -1,0 +1,33 @@
+Description: Load Balancer
+Parameters:
+  SecurityGroup:
+    Type: String
+  Subnet1: 
+    Type: String
+  Subnet2: 
+    Type: String
+Resources:
+  LoadBalancer:
+    Type: AWS::ElasticLoadBalancing::LoadBalancer
+    Properties:                  
+      CrossZone: true
+      HealthCheck:
+        HealthyThreshold: 2
+        Interval: 30
+        Target: HTTP:80/
+        Timeout: 10
+        UnhealthyThreshold: 2
+      Listeners:
+      - InstancePort: 80
+        InstanceProtocol: HTTP
+        LoadBalancerPort: 80          
+        Protocol: HTTP          
+      LoadBalancerName: OpsworksLoadBalancer
+      SecurityGroups:
+        - !Ref SecurityGroup
+      Subnets:
+        - !Ref Subnet1
+        - !Ref Subnet2
+Outputs:
+  LoadBalancer:
+    Value: !Ref LoadBalancer

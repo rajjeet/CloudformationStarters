@@ -1,0 +1,144 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Security
+Parameters:
+  Vpc:
+    Type: String
+  VpcPrefix:
+    Type: String
+Resources:    
+  PublicSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:       
+      GroupDescription: Security group for internet-facing components
+      VpcId: !Ref Vpc
+      SecurityGroupIngress:
+        - CidrIp: 0.0.0.0/0
+          FromPort: 80
+          ToPort: 80
+          IpProtocol: tcp        
+        - CidrIp: 0.0.0.0/0
+          FromPort: 443
+          ToPort: 443
+          IpProtocol: tcp            
+        - SourceSecurityGroupId: !Ref SshSecurityGroup
+          FromPort: 22
+          ToPort: 22
+          IpProtocol: tcp        
+      Tags:
+        - Key: Name
+          Value: Public-SG
+  AppSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:       
+      GroupDescription: Security group for components receiving HTTP/HTTPS traffic from public components
+      VpcId: !Ref Vpc
+      SecurityGroupIngress:
+        - SourceSecurityGroupId: !Ref PublicSecurityGroup
+          FromPort: 80
+          ToPort: 80
+          IpProtocol: tcp        
+        - SourceSecurityGroupId: !Ref PublicSecurityGroup
+          FromPort: 443
+          ToPort: 443
+          IpProtocol: tcp        
+        - SourceSecurityGroupId: !Ref SshSecurityGroup
+          FromPort: 22
+          ToPort: 22
+          IpProtocol: tcp        
+        - CidrIp: 0.0.0.0/0
+          FromPort: 22
+          ToPort: 22
+          IpProtocol: tcp        
+      SecurityGroupEgress:
+        - CidrIp: 0.0.0.0/0          
+          FromPort: 443
+          ToPort: 443
+          IpProtocol: tcp
+      Tags:
+        - Key: Name
+          Value: App-SG
+  SshSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:       
+      GroupDescription: Security group for SSH/RDP access
+      VpcId: !Ref Vpc
+      SecurityGroupIngress:
+        - CidrIp: "{{resolve:ssm:MyHomeIpAddressCidr:1}}"
+          FromPort: 22
+          ToPort: 22
+          IpProtocol: tcp        
+        - CidrIp: "{{resolve:ssm:MyMobileIpAddressCidr:1}}"
+          FromPort: 22
+          ToPort: 22
+          IpProtocol: tcp
+        - CidrIp: "{{resolve:ssm:MyHomeIpAddressCidr:1}}"
+          FromPort: 3389
+          ToPort: 3389
+          IpProtocol: tcp
+        - CidrIp: "{{resolve:ssm:MyMobileIpAddressCidr:1}}"
+          FromPort: 3389
+          ToPort: 3389
+          IpProtocol: tcp        
+      Tags:
+        - Key: Name
+          Value: Ssh-SG
+  # Roles    
+  IamInstanceRole:
+    Type: AWS::IAM::Role
+    Properties: 
+      RoleName: IamInstanceRole
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement: 
+          - Effect: Allow
+            Principal: 
+              Service: 
+                - ec2.amazonaws.com
+            Action: 
+              - sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonEC2RoleforSSM
+        - arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess
+  IamInstanceProfile: 
+    Type: AWS::IAM::InstanceProfile
+    Properties:       
+      Roles: 
+        - !Ref IamInstanceRole  
+  VpcFlowLogsRole:
+    Type: AWS::IAM::Role
+    Properties: 
+      RoleName: VpcFlowLogsRole
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement: 
+          - Effect: Allow
+            Principal: 
+              Service: 
+                - ec2.amazonaws.com
+            Action: 
+              - sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/CloudWatchLogsFullAccess
+  VpcFlowLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties: 
+      LogGroupName: VpcFlowLogs
+      RetentionInDays: 7
+  VpcFlowLog:
+    Type: AWS::EC2::FlowLog
+    Properties:
+      DeliverLogsPermissionArn : !GetAtt VpcFlowLogsRole.Arn
+      LogDestination: !GetAtt VpcFlowLogGroup.Arn
+      LogDestinationType : cloud-watch-logs
+      ResourceId : !Ref Vpc
+      ResourceType : VPC 
+      TrafficType : REJECT 
+Outputs:
+  IamInstanceProfileArn:
+    Value: !GetAtt IamInstanceProfile.Arn
+  PublicSecurityGroup:
+    Value: !Ref PublicSecurityGroup
+  AppSecurityGroup:
+    Value: !Ref AppSecurityGroup
+  SshSecurityGroup:
+    Value: !Ref SshSecurityGroup
