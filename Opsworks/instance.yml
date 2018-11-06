@@ -25,7 +25,6 @@ Resources:
       StackId: !Ref StackId
       SubnetId: !Ref AppSubnetAz1
   DemoInstance2:
-    # DependsOn: DemoInstance1
     Type: "AWS::OpsWorks::Instance"
     Properties:
       InstanceType: t2.micro
@@ -35,12 +34,12 @@ Resources:
       RootDeviceType: ebs
       StackId: !Ref StackId
       SubnetId: !Ref AppSubnetAz2
-  # BastionInstance1:
-  #   Type: "AWS::OpsWorks::Instance"
-  #   Properties:
-  #     InstanceType: t2.micro
-  #     LayerIds: 
-  #     - !Ref BastionHostLayer
-  #     RootDeviceType: ebs
-  #     StackId: !Ref StackId
-  #     SubnetId: !Ref PublicSubnetAz1
+  BastionInstance1:
+    Type: "AWS::OpsWorks::Instance"
+    Properties:
+      InstanceType: t2.micro
+      LayerIds: 
+      - !Ref BastionHostLayer
+      RootDeviceType: ebs
+      StackId: !Ref StackId
+      SubnetId: !Ref PublicSubnetAz1
