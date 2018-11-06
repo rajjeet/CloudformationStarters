@@ -115,8 +115,8 @@ function Confirm-RegisteredDomainNameServers ($DomainName, $NameServerList){
     }    
   }
   if ($dnsMissing){
-    Update-R53DDomainNameserver -DomainName $domainName -Nameserver $nameServers
-    Write-Host "Nameservers of $domainname updated!" -ForegroundColor Green
+    Update-R53DDomainNameserver -DomainName $DomainName -Nameserver $ans
+    Write-Host "Nameservers of $Domainname updated!" -ForegroundColor Green
   }
 } 
 function Add-ACMCNameToRoute53 ($CertStackName, $HostedZoneId) {
