@@ -1,0 +1,63 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: EKS Worker Nodes
+Parameters:
+  NodeInstanceProfile:
+    Type: String
+  NodeSecurityGroup:
+    Type: String
+  LatestAmiId:
+    Type: 'AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>'
+    Default: '/aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2'
+  KeyName:
+    Type: String
+  ClusterName:
+    Type: String
+  BootstrapArguments:
+    Type: String
+  Subnet1Id:
+    Type: String
+  Subnet2Id:
+    Type: String
+Resources:
+
+  NodeGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      DesiredCapacity: 2
+      LaunchConfigurationName: !Ref NodeLaunchConfig
+      MinSize: 2
+      MaxSize: 2
+      VPCZoneIdentifier:
+        - !Ref Subnet1Id
+        - !Ref Subnet2Id
+    UpdatePolicy:
+      AutoScalingRollingUpdate:
+        MinInstancesInService: '1'
+        MaxBatchSize: '1'
+
+  NodeLaunchConfig:
+    Type: AWS::AutoScaling::LaunchConfiguration
+    Properties:
+      AssociatePublicIpAddress: 'true'
+      IamInstanceProfile: !Ref NodeInstanceProfile
+      ImageId: !Ref LatestAmiId
+      InstanceType: t2.small
+      KeyName: !Ref KeyName
+      SecurityGroups:
+      - !Ref NodeSecurityGroup
+      BlockDeviceMappings:
+        - DeviceName: /dev/xvda
+          Ebs:
+            VolumeSize: 8
+            VolumeType: gp2
+            DeleteOnTermination: true
+      UserData:
+        Fn::Base64:
+          !Sub |
+            #!/bin/bash
+            set -o xtrace
+            /etc/eks/bootstrap.sh ${ClusterName} ${BootstrapArguments}
+            /opt/aws/bin/cfn-signal --exit-code $? \
+                     --stack  ${AWS::StackName} \
+                     --resource NodeGroup  \
+                     --region ${AWS::Region}

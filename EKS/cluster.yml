@@ -1,0 +1,25 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: EKS cluster
+Parameters:
+  SecurityGroupId:
+    Type: String
+  SubnetId1:
+    Type: String
+  SubnetId2:
+    Type: String
+  EksClusterRole:
+    Type: String
+Resources:
+  ClusterControlPlane:
+    Type: "AWS::EKS::Cluster"
+    Properties:    
+      ResourcesVpcConfig: 
+        SecurityGroupIds:
+          - !Ref SecurityGroupId
+        SubnetIds:
+          - !Ref SubnetId1
+          - !Ref SubnetId2
+      RoleArn: !Ref EksClusterRole
+Outputs:
+  ClusterControlPlane:
+    Value: !Ref ClusterControlPlane

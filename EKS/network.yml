@@ -1,0 +1,154 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Network
+Parameters:
+  VpcPrefix:
+    Type: String
+
+Resources:
+
+  Vpc:
+    Type: AWS::EC2::VPC
+    Properties: 
+      CidrBlock: !Join [ ".", [ !Ref VpcPrefix , "0.0/16" ] ]
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+
+  # Internet Gateway
+  InternetGatway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: InternetGateway
+
+  IGWGatewayAttachment:    
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      InternetGatewayId: !Ref InternetGatway
+      VpcId: !Ref Vpc
+
+  # 2 AZs, 3 Subnets each (1 Public, 1 Private, 1 Data)
+  # Public Subnet 1
+  PublicSubnetAz1:
+    Type: AWS::EC2::Subnet
+    Properties:        
+      AvailabilityZone: !Select 
+        - 0
+        - Fn::GetAZs: !Ref AWS::Region
+      CidrBlock: !Join [ ".", [ !Ref VpcPrefix , "6.0/24" ] ]
+      MapPublicIpOnLaunch: true      
+      VpcId: !Ref Vpc
+      Tags:
+        - Key: Name
+          Value: PublicAz1
+
+  # Public Subnet 2
+  PublicSubnetAz2:
+    Type: AWS::EC2::Subnet
+    Properties:        
+      AvailabilityZone: !Select 
+        - 1
+        - Fn::GetAZs: !Ref AWS::Region
+      CidrBlock: !Join [ ".", [ !Ref VpcPrefix , "7.0/24" ] ]
+      MapPublicIpOnLaunch: true      
+      VpcId: !Ref Vpc    
+      Tags:
+        - Key: Name
+          Value: PublicAz2
+
+  # Public Routing
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties: 
+      VpcId: !Ref Vpc
+      Tags:
+        - Key: Name
+          Value: Public
+
+  PublicRoute:      
+    Type: AWS::EC2::Route
+    Properties:       
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGatway
+      RouteTableId: !Ref PublicRouteTable
+
+  PublicSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties: 
+      RouteTableId: !Ref PublicRouteTable
+      SubnetId: !Ref PublicSubnetAz1
+
+  PublicSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties: 
+      RouteTableId: !Ref PublicRouteTable
+      SubnetId: !Ref PublicSubnetAz2
+
+  # Private Subnet 1
+  PrivateSubnetAz1:
+    Type: AWS::EC2::Subnet
+    Properties:        
+      AvailabilityZone: !Select 
+        - 0
+        - Fn::GetAZs: !Ref AWS::Region
+      CidrBlock: !Join [ ".", [ !Ref VpcPrefix , "10.0/24" ] ]
+      MapPublicIpOnLaunch: true
+      VpcId: !Ref Vpc
+      Tags:
+        - Key: Name
+          Value: PrivateAz1
+
+  # Private Subnet 2
+  PrivateSubnetAz2:
+    Type: AWS::EC2::Subnet
+    Properties:        
+      AvailabilityZone: !Select 
+        - 1
+        - Fn::GetAZs: !Ref AWS::Region
+      CidrBlock: !Join [ ".", [ !Ref VpcPrefix , "11.0/24" ] ]
+      MapPublicIpOnLaunch: true
+      VpcId: !Ref Vpc
+      Tags:
+        - Key: Name
+          Value: PrivateAz2
+
+  # Private Routing
+  PrivateAz1RouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties: 
+      VpcId: !Ref Vpc  
+      Tags:
+        - Key: Name
+          Value: PrivateAz1
+
+  PrivateAz2RouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties: 
+      VpcId: !Ref Vpc
+      Tags:
+        - Key: Name
+          Value: PrivateAz2  
+
+  PrivateSubnetAz1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties: 
+      RouteTableId: !Ref PrivateAz1RouteTable
+      SubnetId: !Ref PrivateSubnetAz1
+
+  PrivateSubnetAz2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties: 
+      RouteTableId: !Ref PrivateAz2RouteTable
+      SubnetId: !Ref PrivateSubnetAz2
+  
+Outputs:
+  Vpc:
+    Value: !Ref Vpc
+  PublicSubnetAz1:
+    Value: !Ref PublicSubnetAz1
+  PublicSubnetAz2:
+    Value: !Ref PublicSubnetAz2
+  PrivateSubnetAz1:
+    Value: !Ref PrivateSubnetAz1
+  PrivateSubnetAz2:
+    Value: !Ref PrivateSubnetAz2

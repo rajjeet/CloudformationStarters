@@ -1,0 +1,164 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Security
+Parameters:
+  VpcId:
+    Type: String
+  
+Resources:
+
+  NodeInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Path: "/"
+      Roles:
+      - !Ref NodeInstanceRole
+
+  # Roles 
+  NodeInstanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - ec2.amazonaws.com
+          Action:
+          - sts:AssumeRole
+      Path: "/"
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonEC2RoleforSSM
+        - arn:aws:iam::aws:policy/AmazonEKSWorkerNodePolicy
+        - arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy
+        - arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly
+   
+  ClusterControlPlaneServiceRole:
+    Type: AWS::IAM::Role
+    Properties: 
+      RoleName: ClusterControlPlaneServiceRole
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement: 
+          - Effect: Allow
+            Principal: 
+              Service: 
+                - eks.amazonaws.com
+            Action: 
+              - sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonEKSClusterPolicy
+        - arn:aws:iam::aws:policy/AmazonEKSServicePolicy
+
+  # Security Groups
+  ClusterControlPlaneSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for the cluster
+      VpcId:
+        !Ref VpcId
+
+  NodeSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for all nodes in the cluster
+      VpcId:
+        !Ref VpcId      
+
+  NodeSecurityGroupIngress:
+    Type: AWS::EC2::SecurityGroupIngress
+    DependsOn: NodeSecurityGroup
+    Properties:
+      Description: Allow node to communicate with each other
+      GroupId: !Ref NodeSecurityGroup
+      SourceSecurityGroupId: !Ref NodeSecurityGroup
+      IpProtocol: '-1'
+      FromPort: 0
+      ToPort: 65535
+
+  NodeSecurityGroupFromControlPlaneIngress:
+    Type: AWS::EC2::SecurityGroupIngress
+    DependsOn: NodeSecurityGroup
+    Properties:
+      Description: Allow worker Kubelets and pods to receive communication from the cluster control plane
+      GroupId: !Ref NodeSecurityGroup
+      SourceSecurityGroupId: !Ref ClusterControlPlaneSecurityGroup
+      IpProtocol: tcp
+      FromPort: 1025
+      ToPort: 65535
+
+  NodeSecurityGroupFromControlPlaneOn443Ingress:
+    Type: AWS::EC2::SecurityGroupIngress
+    DependsOn: NodeSecurityGroup
+    Properties:
+      Description: Allow pods running extension API servers on port 443 to receive communication from cluster control plane
+      GroupId: !Ref NodeSecurityGroup
+      SourceSecurityGroupId: !Ref ClusterControlPlaneSecurityGroup
+      IpProtocol: tcp
+      FromPort: 443
+      ToPort: 443
+
+  ControlPlaneEgressToNodeSecurityGroup:
+    Type: AWS::EC2::SecurityGroupEgress
+    DependsOn: NodeSecurityGroup
+    Properties:
+      Description: Allow the cluster control plane to communicate with worker Kubelet and pods
+      GroupId: !Ref ClusterControlPlaneSecurityGroup
+      DestinationSecurityGroupId: !Ref NodeSecurityGroup
+      IpProtocol: tcp
+      FromPort: 1025
+      ToPort: 65535
+
+  ControlPlaneEgressToNodeSecurityGroupOn443:
+    Type: AWS::EC2::SecurityGroupEgress
+    DependsOn: NodeSecurityGroup
+    Properties:
+      Description: Allow the cluster control plane to communicate with pods running extension API servers on port 443
+      GroupId: !Ref ClusterControlPlaneSecurityGroup
+      DestinationSecurityGroupId: !Ref NodeSecurityGroup
+      IpProtocol: tcp
+      FromPort: 443
+      ToPort: 443
+
+  ClusterControlPlaneSecurityGroupIngress:
+    Type: AWS::EC2::SecurityGroupIngress
+    DependsOn: NodeSecurityGroup
+    Properties:
+      Description: Allow pods to communicate with the cluster API Server
+      GroupId: !Ref ClusterControlPlaneSecurityGroup
+      SourceSecurityGroupId: !Ref NodeSecurityGroup
+      IpProtocol: tcp
+      ToPort: 443
+      FromPort: 443
+    
+  ClusterControlPlaneSecurityGroupIngressFromNet443:
+    Type: AWS::EC2::SecurityGroupIngress
+    DependsOn: NodeSecurityGroup
+    Properties:
+      Description: Allow pods to communicate with the cluster API Server
+      GroupId: !Ref ClusterControlPlaneSecurityGroup
+      CidrIp: "{{resolve:ssm:MyHomeIpAddressCidr:1}}"
+      IpProtocol: tcp
+      ToPort: 443
+      FromPort: 443
+
+  ClusterControlPlaneSecurityGroupIngressFromNet80:
+    Type: AWS::EC2::SecurityGroupIngress
+    DependsOn: NodeSecurityGroup
+    Properties:
+      Description: Allow pods to communicate with the cluster API Server
+      GroupId: !Ref ClusterControlPlaneSecurityGroup
+      CidrIp: "{{resolve:ssm:MyHomeIpAddressCidr:1}}"
+      IpProtocol: tcp
+      ToPort: 80
+      FromPort: 80
+
+Outputs:
+  ClusterControlPlaneServiceRole:
+    Value: !GetAtt ClusterControlPlaneServiceRole.Arn
+  NodeInstanceProfile:
+    Value: !Ref NodeInstanceProfile
+  ClusterControlPlaneSecurityGroup:
+    Value: !Ref ClusterControlPlaneSecurityGroup
+  NodeSecurityGroup:
+    Value: !Ref NodeSecurityGroup
